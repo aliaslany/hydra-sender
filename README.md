@@ -79,10 +79,11 @@ Go to **Settings → Secrets and variables → Actions** in your fork and add:
 | `STATUS_CHECK_LIMIT` | optional | `20` | Max old ads rechecked per run for the "likely removed" feature |
 
 Configure at least one token/chat-ID pair. Telegram keeps its rich photo or album
-delivery; Bale, Rubika, and Eitaa receive the formatted ad as text. The non-Telegram
-clients use `sendMessage` endpoints and can be pointed at compatible API gateways with
-the optional `BALE_API_BASE_URL`, `RUBIKA_API_BASE_URL`, or `EITAA_API_BASE_URL`
-environment variables.
+delivery. Bale sends the first listing image followed by the formatted ad text; Rubika
+and Eitaa receive the formatted ad as text. The non-Telegram clients use compatible
+Bot API endpoints and can be pointed at alternative gateways with the optional
+`BALE_API_BASE_URL`, `RUBIKA_API_BASE_URL`, or `EITAA_API_BASE_URL` environment
+variables.
 
 `tokens.json` now records delivery per platform. If one platform fails, the next run
 retries only that platform, avoiding duplicate posts on the platforms that succeeded.

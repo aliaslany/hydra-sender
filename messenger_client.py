@@ -21,11 +21,11 @@ def enabled_messengers() -> list[str]:
     return messengers
 
 
-def _send_http_message(name: str, url: str, chat_id: str, text: str) -> bool:
+def _post_json(name: str, url: str, payload: dict) -> bool:
     try:
         response = requests.post(
             url,
-            json={"chat_id": chat_id, "text": text},
+            json=payload,
             timeout=config.MESSENGER_REQUEST_TIMEOUT,
         )
         response.raise_for_status()
@@ -33,8 +33,40 @@ def _send_http_message(name: str, url: str, chat_id: str, text: str) -> bool:
         print("Failed to send to {}: {}".format(name, error))
         return False
 
+    try:
+        response_data = response.json()
+    except ValueError:
+        response_data = None
+
+    if isinstance(response_data, dict) and response_data.get("ok") is False:
+        print("Failed to send to {}: {}".format(name, response_data))
+        return False
+
+    return True
+
+
+def _send_http_message(name: str, url: str, chat_id: str, text: str) -> bool:
+    if not _post_json(name, url, {"chat_id": chat_id, "text": text}):
+        return False
     print("Sent ad to {}.".format(name))
     return True
+
+
+def _send_bale_ad(ad, text: str) -> bool:
+    base_url = config.BALE_API_BASE_URL.rstrip("/")
+    send_message_url = "{}/bot{}/sendMessage".format(base_url, config.BALE_BOT_TOKEN)
+
+    if ad.images:
+        send_photo_url = "{}/bot{}/sendPhoto".format(base_url, config.BALE_BOT_TOKEN)
+        photo_sent = _post_json(
+            "Bale photo",
+            send_photo_url,
+            {"chat_id": config.BALE_CHATID, "photo": ad.images[0]},
+        )
+        if not photo_sent:
+            return False
+
+    return _send_http_message("Bale", send_message_url, config.BALE_CHATID, text)
 
 
 async def send_ad(ad, destinations: list[str]) -> dict[str, bool]:
@@ -49,12 +81,8 @@ async def send_ad(ad, destinations: list[str]) -> dict[str, bool]:
                 outcomes[destination] = True
             elif destination == "bale":
                 outcomes[destination] = await asyncio.to_thread(
-                    _send_http_message,
-                    "Bale",
-                    "{}/bot{}/sendMessage".format(
-                        config.BALE_API_BASE_URL.rstrip("/"), config.BALE_BOT_TOKEN
-                    ),
-                    config.BALE_CHATID,
+                    _send_bale_ad,
+                    ad,
                     text,
                 )
             elif destination == "rubika":
