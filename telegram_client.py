@@ -5,6 +5,11 @@ import telegram
 
 import config
 from hashtags import generate_hashtags
+from text_utils import (
+    TELEGRAM_CAPTION_LIMIT,
+    TELEGRAM_MESSAGE_LIMIT,
+    split_text_into_chunks,
+)
 
 bot = None
 if config.BOT_TOKEN:
@@ -43,6 +48,18 @@ def build_message_text(ad) -> str:
     return text
 
 
+def build_short_caption(ad) -> str:
+    """A short teaser used as the photo/album caption when the full text
+    would exceed Telegram's 1024-char caption limit. The full text still
+    goes out right after, as a separate message."""
+    _price = f"{ad.price:,} تومان" if ad.price else "توافقی"
+    return (
+        f"🗄 <b>{html.escape(ad.title)}</b>\n"
+        f"💰 قیمت : {_price}\n\n"
+        "(توضیحات کامل در پیام بعدی 👇)"
+    )
+
+
 def build_plain_message_text(ad) -> str:
     """Build a portable text-only version for non-Telegram APIs."""
     text = "🗄 {}\n".format(ad.title)
@@ -68,32 +85,45 @@ def build_plain_message_text(ad) -> str:
     return text + config.FOOTER_TEXT
 
 
+async def _send_text_chunks(text: str):
+    for chunk in split_text_into_chunks(text, TELEGRAM_MESSAGE_LIMIT):
+        await bot.send_message(
+            text=chunk, chat_id=config.BOT_CHATID, parse_mode="HTML"
+        )
+
+
 async def send_telegram_message(ad):
     if bot is None or not config.BOT_CHATID:
         raise RuntimeError("Telegram is not configured.")
 
     text = build_message_text(ad)
+    fits_as_caption = len(text) <= TELEGRAM_CAPTION_LIMIT
 
-    if len(ad.images) == 1:
-        await bot.send_photo(
-            caption=text,
-            photo=ad.images[0],
-            chat_id=config.BOT_CHATID,
-            parse_mode="HTML",
-        )
-    elif len(ad.images) > 1:
-        media_list = [telegram.InputMediaPhoto(img) for img in ad.images[:10]]
-        try:
-            await bot.send_media_group(
-                caption=text,
-                media=media_list,
+    if ad.images:
+        caption = text if fits_as_caption else build_short_caption(ad)
+
+        if len(ad.images) == 1:
+            await bot.send_photo(
+                caption=caption,
+                photo=ad.images[0],
                 chat_id=config.BOT_CHATID,
                 parse_mode="HTML",
             )
-        except telegram.error.BadRequest as e:
-            print("Error sending photos :", e)
-            return
+        else:
+            media_list = [telegram.InputMediaPhoto(img) for img in ad.images[:10]]
+            try:
+                await bot.send_media_group(
+                    caption=caption,
+                    media=media_list,
+                    chat_id=config.BOT_CHATID,
+                    parse_mode="HTML",
+                )
+            except telegram.error.BadRequest as e:
+                print("Error sending photos :", e)
+                # Still deliver the text below rather than losing the ad.
+                fits_as_caption = False
+
+        if not fits_as_caption:
+            await _send_text_chunks(text)
     else:
-        await bot.send_message(
-            text=text, chat_id=config.BOT_CHATID, parse_mode="HTML"
-        )
+        await _send_text_chunks(text)
