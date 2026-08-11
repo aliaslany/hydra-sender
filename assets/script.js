@@ -1,5 +1,5 @@
 // !! تنظیمات مهم: قبل از انتشار، آیدی ربات تلگرام خود را اینجا جایگزین کنید !!
-const TELEGRAM_BOT_USERNAME = "divaradsenderbot"; // بدون @ بنویسید
+const TELEGRAM_BOT_USERNAME = "Divarassist"; // بدون @ بنویسید
 
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("wizardOverlay");
