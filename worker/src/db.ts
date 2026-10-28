@@ -55,9 +55,39 @@ export const SETTING_KEYS = [
   'default_plan_id', 'support_contact', 'retention_days',
 ] as const;
 
+const INIT_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS plans (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, is_paid INTEGER NOT NULL DEFAULT 0, duration_days INTEGER, max_searches INTEGER, price INTEGER);`,
+  `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, username TEXT, first_name TEXT, is_blocked INTEGER NOT NULL DEFAULT 0, bot_stopped INTEGER NOT NULL DEFAULT 0, plan_id INTEGER REFERENCES plans(id), expires_at INTEGER, searches_remaining INTEGER, wizard TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()));`,
+  `CREATE TABLE IF NOT EXISTS searches (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id), deal TEXT NOT NULL, property TEXT NOT NULL, criteria TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT (unixepoch()));`,
+  `CREATE INDEX IF NOT EXISTS idx_searches_lookup ON searches(is_active, deal, property);`,
+  `CREATE TABLE IF NOT EXISTS ads (token TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'ok', deal TEXT, property TEXT, title TEXT, url TEXT, image TEXT, district TEXT, total INTEGER, per_m2 INTEGER, deposit INTEGER, rent INTEGER, area INTEGER, rooms INTEGER, floor INTEGER, year INTEGER, parking INTEGER, storage INTEGER, elevator INTEGER, balcony INTEGER, orientation TEXT, structure TEXT, cabinet TEXT, cooling TEXT, heating TEXT, first_seen INTEGER NOT NULL DEFAULT (unixepoch()));`,
+  `CREATE INDEX IF NOT EXISTS idx_ads_seen ON ads(first_seen);`,
+  `CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, search_id INTEGER NOT NULL, ad_token TEXT NOT NULL, score INTEGER, checked INTEGER NOT NULL DEFAULT 0, asked INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()), sent_at INTEGER, UNIQUE (search_id, ad_token));`,
+  `CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status, id);`,
+  `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+  `CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL DEFAULT (unixepoch()), action TEXT NOT NULL, detail TEXT);`,
+  `INSERT OR IGNORE INTO plans (id, name, is_paid, duration_days, max_searches, price) VALUES (1, 'آزمایشی رایگان', 0, 7, 2, 0);`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('default_plan_id', '1');`,
+];
+
+export async function ensureSchema(db: D1Database): Promise<void> {
+  for (const sql of INIT_STATEMENTS) {
+    await db.prepare(sql).run();
+  }
+}
+
 export async function rawSettings(db: D1Database): Promise<Record<string, string>> {
-  const { results } = await db.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>();
-  return Object.fromEntries(results.map((r) => [r.key, r.value]));
+  try {
+    const { results } = await db.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>();
+    return Object.fromEntries(results.map((r) => [r.key, r.value]));
+  } catch (err: any) {
+    if (String(err?.message ?? err).includes('no such table')) {
+      await ensureSchema(db);
+      const { results } = await db.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>();
+      return Object.fromEntries(results.map((r) => [r.key, r.value]));
+    }
+    throw err;
+  }
 }
 
 const num = (v: string | undefined, d: number): number => {

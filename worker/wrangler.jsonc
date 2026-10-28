@@ -7,7 +7,7 @@
   // Optional custom domain (uncomment and replace with your domain if desired):
   // "routes": [{ "pattern": "bot.yourdomain.com", "custom_domain": true }],
   "d1_databases": [
-    { "binding": "DB", "database_name": "hydra", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "hydra", "database_id": "3874e7bc-cbea-4954-9003-77584d82f489", "migrations_dir": "migrations" }
   ],
   // Admin page is served from ./public/admin
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
