@@ -1,9 +1,11 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "hydra-bot",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
-  // Replace with your own subdomain (the domain must be on your Cloudflare account).
-  "routes": [{ "pattern": "bot.example.com", "custom_domain": true }],
+  "workers_dev": true,
+  // Optional custom domain (uncomment and replace with your domain if desired):
+  // "routes": [{ "pattern": "bot.yourdomain.com", "custom_domain": true }],
   "d1_databases": [
     { "binding": "DB", "database_name": "hydra", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
   ],
