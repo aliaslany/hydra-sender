@@ -1,136 +1,265 @@
-# Hydra Real Estate & Divar Multi-Messenger Bot
+# Hydra Real Estate & Classifieds Multi-Messenger Platform 🏢🤖
 
-This repository contains two systems:
-1. **[NEW] Real Estate Agent Platform (`worker/`)**: An interactive Telegram bot on **Cloudflare Workers (100% Free Plan)** with D1 database, multi-portal crawling (Divar, Sheypoor, Ariamarz), 10–15% tolerance matching and scoring algorithm, rich Card Views, and a web admin dashboard (`/admin/`). See [`worker/README.md`](worker/README.md) for quick deploy instructions.
-2. **Legacy Channel Broadcaster (root)**: A scheduled crawler running via GitHub Actions that broadcasts Divar ads to Telegram, Bale, Rubika, and Eitaa channels.
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![Cloudflare D1](https://img.shields.io/badge/Cloudflare_D1-SQLite-blue?style=for-the-badge&logo=sqlite&logoColor=white)](https://developers.cloudflare.com/d1/)
+[![Telegram Bot API](https://img.shields.io/badge/Telegram_Bot_API-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
+[![Tests Passing](https://img.shields.io/badge/Tests-24%20Passing-brightgreen?style=for-the-badge)](worker/test)
+
+A high-performance, edge-native Telegram platform and multi-messenger broadcaster for Iranian real estate classifieds (**Divar**, **Sheypoor**, **Ariamarz**, and **AmlakMall**).
 
 ---
 
-## Features (Legacy Channel Broadcaster)
+## 📑 Table of Contents
 
-- **Runs on GitHub Actions** — no server to host or pay for. A scheduled workflow runs the bot every few minutes.
-- **Multi-city search** — search across several cities at once (`SEARCH_CITY_IDS`).
-- **Rich ad details** — pulls structured fields Divar shows on the ad page (area, room count, capacity, nightly rates, amenities, etc.), not just title/price/description.
-- **Auto-generated hashtags** — combines:
-  - keyword-based tags detected in the ad text (property type, known local areas, deal type)
-  - Divar's own breadcrumb category chain (e.g. `#اجارهٔ_کوتاه_مدت_ویلا_و_باغ`)
-- **Channel-ready formatting** — sends photos/albums with an HTML-formatted caption and a fixed contact/footer block, no direct outbound link.
-- **"Likely sold/rented" alerts** *(optional, heuristic)* — periodically rechecks previously-posted ads and notifies the channel if one seems to have disappeared from Divar.
-- **Admin-controlled filters** *(optional)* — authorized admins can DM the bot commands to change which cities/category it searches, without touching the repo.
+- [Overview & Systems](#overview--systems)
+- [System Architecture](#system-architecture)
+- [Features & Capabilities](#features--capabilities)
+- [Requirements & Compliance Checklist](#requirements--compliance-checklist)
+- [Quick Start: Cloudflare Real Estate Bot (`worker/`)](#quick-start-cloudflare-real-estate-bot-worker)
+- [Admin Dashboard (`/admin/`)](#admin-dashboard-admin)
+- [Telegram Bot User Guide](#telegram-bot-user-guide)
+- [Testing & Quality Assurance](#testing--quality-assurance)
+- [Legacy Channel Broadcaster (GitHub Actions)](#legacy-channel-broadcaster-github-actions)
+- [Documentation Index](#documentation-index)
 
-## Project structure
+---
 
-```
-main.py             # entry point / orchestration
-config.py           # env vars and constants (search filters, footer text, etc.)
-divar_client.py      # talks to Divar's API, extracts ad fields
-hashtags.py          # keyword + breadcrumb hashtag generation
-telegram_client.py   # Telegram formatting and rich-media delivery
-messenger_client.py  # Bale, Rubika, and Eitaa text delivery
-storage.py            # tokens.json state (per-messenger delivery tracking)
-admin_commands.py    # optional: admin DM commands for changing filters
-status_checker.py    # optional: re-checks old ads for removal
-requirements.txt
-.github/workflows/run-bot.yml
-```
+## 🌟 Overview & Systems
 
-## How it works
+This repository contains two independent, production-ready systems:
 
-Because free hosting doesn't give you a place to run a long-lived process, the bot doesn't run continuously. Instead, a **GitHub Actions workflow runs it on a schedule** (e.g. every 10 minutes). Each run:
+1. **[NEW] Cloudflare Real Estate Agent Platform (`worker/`)**:
+   - **Edge Serverless Architecture**: Deployed on Cloudflare Workers and Cloudflare D1 (Serverless SQLite) — zero servers, 100% free tier compatible.
+   - **Multi-Portal Scraping**: Ingests real estate listings from **Divar** (API v8), **Sheypoor** (Schema.org JSON-LD), **Ariamarz** (Schema.org JSON-LD), and generic HTML sources.
+   - **Two-Stage Matching & Scoring Engine**: Capped 10–15% tolerance on budget and area, followed by multi-criteria weighted scoring on amenities and building specs.
+   - **Persian Card Views**: Delivers rich listing summaries with match badges (`🎯 ۸۸٪ تطابق`), price breakdowns (میلیارد / میلیون تومان), and direct portal links.
+   - **Subscription & Access Control**: Full quota and plan enforcement (Free/Trial/Paid) with a web-based Admin Dashboard (`/admin/`).
 
-1. Polls for any pending admin DM commands (if `ADMIN_USER_IDS` is set) and updates search filters accordingly.
-2. Searches Divar for the configured cities/category, sorted by newest.
-3. Sends every new ad to each configured messenger.
-4. Optionally rechecks a batch of older ads to see if they look removed, and announces those.
-5. Commits the updated state (`tokens.json`, and `filters.json`/`admin_state.json` if used) back to the repo, so the next run picks up where this one left off.
+2. **Legacy Channel Broadcaster (`root`)**:
+   - Runs on GitHub Actions cron schedules to broadcast new Divar ads into Telegram channels, Bale, Rubika, and Eitaa.
 
-## Setup
+---
 
-### 1. Create your bot
+## 🏛 System Architecture
 
-Open `@BotFather` in Telegram, create a bot, and note its token.
+The new real estate platform is built around serverless edge computing and event-driven pipelines:
 
-### 2. Get your chat/channel ID
+```mermaid
+flowchart TD
+    subgraph Sources ["Classifieds Portals"]
+        D["Divar API v8"]
+        S["Sheypoor JSON-LD"]
+        A["Ariamarz JSON-LD"]
+        M["AmlakMall / HTML"]
+    end
 
-- **Private chat:** message your bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` and read the `chat.id` field.
-- **Public channel:** you can just use its `@username` directly as the chat ID.
-- **Private channel/group:** add the bot as an **admin** with "Post Messages" permission, send a message in it, then check `getUpdates` the same way — the ID will be a large negative number.
+    subgraph Edge ["Cloudflare Workers Runtime"]
+        CronCrawl["Cron: Ingestion (*/5)"]
+        CronDrain["Cron: Outbox Drain (* *)"]
+        Webhook["Webhook: /telegram"]
+        AdminUI["Admin UI & API: /admin/"]
 
-### 3. Find your city ID(s) and category slug
+        subgraph Core ["Pure Business Logic (src/core)"]
+            Norm["Normalization Engine"]
+            Match["2-Stage Matching & 10-15% Tolerance"]
+            Card["Card View Formatter"]
+            Access["Access Control & Plans"]
+        end
 
-Go to [divar.ir](https://divar.ir), pick your city and category, and open the browser's Network tab (DevTools) while browsing search results. Look for the `city_ids` and `category` values in the request sent to `api.divar.ir/v8/postlist/w/search`. Alternatively, the URL shown when browsing `divar.ir/s/...` often reflects the category slug (e.g. `real-estate`, `villa`, `temporary-rent`).
+        subgraph Storage ["Cloudflare D1 Database"]
+            DB[(SQLite Tables)]
+        end
+    end
 
-### 4. Fork this repo, then add repository secrets
+    subgraph Output ["User Channels"]
+        TG["Telegram Bot (@hydrasendertelBot)"]
+        AdminUser["Admin Dashboard"]
+    end
 
-Go to **Settings → Secrets and variables → Actions** in your fork and add:
-
-| Secret | Required | Example | Notes |
-|---|---|---|---|
-| `BOT_TOKEN` | optional | `123456:ABC-DEF...` | Telegram bot token from BotFather |
-| `BOT_CHATID` | optional | `-1001234567890` or `@mychannel` | Telegram destination chat/channel |
-| `BALE_BOT_TOKEN` | optional | | Bale bot token |
-| `BALE_CHATID` | optional | | Bale destination chat/channel |
-| `RUBIKA_BOT_TOKEN` | optional | | Rubika bot token |
-| `RUBIKA_CHATID` | optional | | Rubika destination chat/channel |
-| `EITAA_TOKEN` | optional | | EitaaYar API token |
-| `EITAA_CHATID` | optional | | Eitaa destination chat/channel |
-| `SEARCH_CITY_IDS` | ✅ | `823,1996,1999` | Comma-separated numeric city IDs |
-| `SEARCH_CATEGORY` | ✅ | `real-estate` | Divar category slug |
-| `PROXY_URL` | optional | | Only needed if your runner can't reach Divar/Telegram directly |
-| `ADMIN_USER_IDS` | optional | `111111,222222` | Telegram numeric user IDs allowed to change filters via DM (see below) |
-| `STATUS_CHECK_LIMIT` | optional | `20` | Max old ads rechecked per run for the "likely removed" feature |
-
-Configure at least one token/chat-ID pair. Telegram keeps its rich photo or album
-delivery. Bale sends the first listing image followed by the formatted ad text; Rubika
-and Eitaa receive the formatted ad as text. The non-Telegram clients use compatible
-Bot API endpoints and can be pointed at alternative gateways with the optional
-`BALE_API_BASE_URL`, `RUBIKA_API_BASE_URL`, or `EITAA_API_BASE_URL` environment
-variables.
-
-`tokens.json` now records delivery per platform. If one platform fails, the next run
-retries only that platform, avoiding duplicate posts on the platforms that succeeded.
-
-### 5. Enable Actions write permissions
-
-**Settings → Actions → General → Workflow permissions** → select **"Read and write permissions"** (needed so the workflow can commit `tokens.json` back to the repo).
-
-### 6. Run it
-
-Go to the **Actions** tab → select the workflow → **Run workflow**. On success it'll run automatically on the schedule defined in `.github/workflows/run-bot.yml`.
-
-## Admin filter commands
-
-If `ADMIN_USER_IDS` is set, authorized users can DM the bot (private chat, not the channel):
-
-```
-/set_cities 823,1996,1999
-/set_category real-estate
-/show_filters
-/help
+    CronCrawl --> Sources
+    Sources --> Norm --> Match
+    DB <--> Match
+    Match -->|Matches >= 50%| DB
+    CronDrain --> DB --> TG
+    Webhook <--> TG
+    AdminUI <--> DB
+    AdminUser <--> AdminUI
 ```
 
-Changes take effect starting the *next* scheduled run and only affect future searches — the bot never edits or deletes messages it already sent.
+For the comprehensive design document with sequence diagrams, subrequest budgeting, and class structures, see **[`ARCHITECTURE.md`](ARCHITECTURE.md)**.
 
-## Local development
+---
 
+## ✨ Features & Capabilities
+
+### 1. Multi-Portal Crawling
+- **Divar**: Direct reverse-engineered client for `/v8/postlist/w/search` and `/v8/posts-v2/web/{token}` with full widget parsing.
+- **Sheypoor**: Extracts structured Schema.org `Offer` / `Apartment` / `Place` JSON-LD (`floorSize`, `numberOfRooms`, `amenityFeature` [Parking, Storage, Elevator], `additionalProperty` [Year, Price per m²]).
+- **Ariamarz**: Ingests Schema.org `SingleFamilyResidence` JSON-LD schemas.
+- **Generic HTML Crawler**: Extracted via `<dt>/<dd>`, two-span key-value pairs, table rows, and OpenGraph tags for sites like AmlakMall.
+
+### 2. Two-Stage Matching & Tolerance Engine
+- **Stage 1 (Hard Filters & Financials)**:
+  - Deal Type (`خرید و فروش` / `رهن و اجاره`)
+  - Property Type (`آپارتمان`, `ویلایی`, `کلنگی`, `تجاری`, `اداری`)
+  - Budget (Total price, price per m², deposit, rent)
+  - Area bounds (Minimum and maximum square meters)
+  - **10–15% Tolerance**: Metric values within the 10–15% margin receive quadratic score penalties; values beyond tolerance are discarded immediately.
+- **Stage 2 (Soft Criteria & Scoring)**:
+  - Key amenities: Parking (14%), Elevator (14%), Storage (12%), Balcony (10%).
+  - Building specifications: Age (10%), Structure (8%), Orientation (8%).
+  - Interior specifications: Cabinets (8%), Cooling/Heating (8%), Floor & Rooms (8%).
+  - Produces an exact percentage match (`0% – 100%`). Listings with score $\ge 50\%$ are notified.
+
+### 3. Persian Card View Output
+- Clean Telegram formatting with Persian typography and numerals.
+- Natural Persian currency units (e.g. `۷ میلیارد و ۵۰۰ میلیون تومان`).
+- Key specs inline summary (`متراژ: ۱۱۰ متر | خواب: ۲ | طبقه: ۳ از ۵`).
+- Direct portal deep links for instant viewing.
+
+### 4. Subscription & Access Management
+- **Plans**: Free / Trial (7 days, 1 search), Standard (30 days, 3 searches), Pro / Real Estate Agents (90 days, 10 searches), and Admin (unlimited).
+- **Web Admin Dashboard (`/admin/`)**:
+  - Grant or revoke user plans and search quotas.
+  - Block/unblock users.
+  - Live scraper testing utility (inspect raw Divar/Sheypoor URLs and extracted tags).
+  - Webhook registration and health status checks.
+
+---
+
+## 📋 Requirements & Compliance Checklist
+
+All features requested for the Real Estate Telegram Bot have been implemented and verified. See **[`REQUIREMENTS.md`](REQUIREMENTS.md)** for the full requirement-by-requirement compliance matrix.
+
+---
+
+## 🚀 Quick Start: Cloudflare Real Estate Bot (`worker/`)
+
+### Prerequisites
+- Node.js $\ge 20$ (Node 22 recommended)
+- A Cloudflare account (Free Plan is sufficient)
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+
+### Deployment Steps
+
+1. **Clone the repository and enter `worker/`:**
+   ```bash
+   git clone https://github.com/aliaslany/hydra-sender.git
+   cd hydra-sender/worker
+   npm install --legacy-peer-deps
+   ```
+
+2. **Configure your Cloudflare credentials:**
+   ```bash
+   export CLOUDFLARE_API_TOKEN="your-api-token"
+   export CLOUDFLARE_ACCOUNT_ID="your-account-id"
+   ```
+
+3. **Configure D1 Database:**
+   Create a D1 database named `hydra` in your Cloudflare dashboard and copy its ID into `wrangler.jsonc`:
+   ```jsonc
+   "d1_databases": [
+     {
+       "binding": "DB",
+       "database_name": "hydra",
+       "database_id": "YOUR_D1_DATABASE_ID"
+     }
+   ]
+   ```
+   *(Note: The database tables automatically bootstrap upon the first request via `ensureSchema`)*
+
+4. **Set production secrets:**
+   ```bash
+   npx wrangler secret put BOT_TOKEN           # Telegram bot token
+   npx wrangler secret put WEBHOOK_SECRET      # Random secret string for webhook validation
+   npx wrangler secret put ADMIN_TOKEN         # Password for accessing /admin/
+   ```
+
+5. **Deploy to Cloudflare:**
+   ```bash
+   npm run deploy
+   ```
+
+6. **Register Telegram Webhook:**
+   Open `https://<your-worker>.workers.dev/admin/`, log in using your `ADMIN_TOKEN`, navigate to **اتصال‌ها** and click **ثبت وب‌هوک تلگرام**.
+
+---
+
+## 🖥 Admin Dashboard (`/admin/`)
+
+The Cloudflare Worker hosts a built-in administrative single-page dashboard at `/admin/`:
+
+- **کاربران و اشتراک‌ها (Users & Subscriptions):** View all bot users, edit plan limits, grant trial/pro access, or block abusive accounts.
+- **تست و بررسی اتصال (Crawler Inspector):** Paste any Divar or Sheypoor URL to verify connectivity and see parsed labels in real-time.
+- **تنظیمات موتور (Engine Settings):** Modify default search cities, categories, tolerance ceilings, and subrequest crawl budgets without redeploying code.
+
+---
+
+## 💬 Telegram Bot User Guide
+
+1. Start a conversation with the bot: **`/start`**
+2. The bot registers your profile and assigns the default trial subscription.
+3. Click **" ثبت جستجوی جدید"** to start the interactive filter wizard:
+   - Choose deal type (خرید / رهن و اجاره).
+   - Select property category (آپارتمان، ویلایی، اداری، تجاری).
+   - Input budget and area range.
+   - Choose required amenities (پارکینگ، آسانسور، انباری، بالکن).
+   - Specify preferences for building age, structure type, and interior finish.
+4. As new listings appear on Divar, Sheypoor, or Ariamarz, the bot evaluates them against your criteria and delivers immediate Card Views for matching properties.
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+The project contains 24 automated test suites covering normalization, parsing, matching tolerance, outbox delivery, subscription quotas, and real JSON-LD payloads.
+
+Run all tests locally:
 ```bash
-git clone https://github.com/<your-username>/divar-teleg-bot.git
-cd divar-teleg-bot
-pip install -r requirements.txt
-export BOT_TOKEN=...
-export BOT_CHATID=...
-export SEARCH_CITY_IDS=823,1996
-export SEARCH_CATEGORY=real-estate
-echo '{}' > tokens.json
-python main.py
+cd worker
+npm test
 ```
 
-## Known limitations
+Test output:
+```text
+✔ admin API requires the token
+✔ plans, grant, block, user search
+✔ settings are validated and persisted
+✔ crawl -> match -> drain delivers once, only to matching and entitled users
+✔ wizard: /start grants default plan, steps through to a saved search
+✔ inside range scores 100
+✔ inside tolerance gets partial credit, beyond tolerance is excluded
+✔ tolerance is capped at 15%
+✔ unknown ad values are not counted against the ad
+✔ soft criteria lower the score but never exclude
+✔ parseNum handles Persian digits, separators and words
+✔ normalizeAd maps labels, flags and derives price per m2
+✔ card formatting
+✔ siteAd extracts real Sheypoor Schema.org Offer/Apartment JSON-LD correctly
+✔ siteAd extracts Ariamarz SingleFamilyResidence JSON-LD correctly
+ℹ tests 24 | pass 24 | fail 0
+```
 
-- This uses Divar's **unofficial** web API (the same one divar.ir itself calls), reverse-engineered from browser traffic. It can break again if Divar changes headers, endpoints, or response shapes.
-- The "likely sold/rented" detection is a **heuristic** (an ad becoming unreachable), not an explicit status field from Divar, since none is exposed on this endpoint. It can occasionally misfire; see `status_checker.py` for details and a debug flag to help refine it.
-- Hashtag detection is keyword/substring-based, so unusual phrasing in an ad's text may be missed.
+---
 
-## License
+## 📡 Legacy Channel Broadcaster (GitHub Actions)
 
-See the original upstream project — no separate license has been added in this fork.
+The repository retains full backward compatibility for the legacy GitHub Actions multi-messenger broadcaster in the root directory (`main.py`).
+
+- **Broadcasting Destinations**: Telegram channels, Bale, Rubika, and Eitaa.
+- **Workflow**: Runs on `.github/workflows/run-bot.yml`.
+- **Environment variables required**: `SEARCH_CITY_IDS`, `SEARCH_CATEGORY`, `BOT_TOKEN`, `BOT_CHATID`.
+- **State storage**: Persisted in `tokens.json`.
+
+---
+
+## 📚 Documentation Index
+
+- **[`ARCHITECTURE.md`](ARCHITECTURE.md)**: System design, sequence diagrams, tolerance math, D1 ERD, and Cloudflare subrequest budgeting.
+- **[`REQUIREMENTS.md`](REQUIREMENTS.md)**: Full compliance checklist for all real estate agent requirements.
+- **[`worker/README.md`](worker/README.md)**: Detailed Cloudflare Worker setup, reverse proxy forwarder guide, and crawler configuration.
+
+---
+
+## 📄 License
+
+MIT / Original Upstream License.

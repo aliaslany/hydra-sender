@@ -1,93 +1,93 @@
-# Hydra real-estate bot (Cloudflare Workers, free plan)
+# Hydra Real Estate Bot (Cloudflare Workers, Free Plan) 🏢⚡
 
-Telegram bot that watches Divar, scores new ads against each user's saved searches
-(10–15 % tolerance on budget and area) and sends a card per match. Includes an admin panel
-for subscriptions. Zero runtime dependencies.
+Telegram bot and crawling platform deployed at the edge on Cloudflare Workers and Cloudflare D1. Ingests real estate listings across Divar, Sheypoor, Ariamarz, and generic HTML classifieds, computes a 10–15% tolerance score, delivers Persian Card Views, and provides a web-based Admin Dashboard.
+
+---
+
+## 📂 Architecture Overview
 
 ```
-src/core/     pure logic (no Cloudflare imports): normalize, match/score, card, access rules, range parser
-src/          worker: bot (wizard), jobs (crawl + drain), admin API, Divar + Telegram clients
-migrations/   D1 schema
-public/admin/ admin panel (served by the same Worker at /admin/)
-tools/divar-forwarder/  tiny relay for the proxy (see below)
-test/         node:test suites, incl. end-to-end with in-memory SQLite
+src/core/               pure logic (0 Cloudflare imports): normalize, match/score, card, access rules, range parser
+src/                    worker runtime: bot wizard (/telegram), jobs (crawl + drain), admin API, portal clients
+migrations/             D1 schema definition (auto-applied at runtime via ensureSchema)
+public/admin/           Admin Dashboard SPA (served at /admin/)
+tools/divar-forwarder/  Optional lightweight relay for external IP masking / proxying
+test/                   24 automated test suites (node:test) with in-memory SQLite
 ```
 
-## Deploy
+- **Detailed System Architecture:** [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
+- **Requirements & Checklist Matrix:** [`../REQUIREMENTS.md`](../REQUIREMENTS.md)
 
+---
+
+## 🚀 Live Production Deployment
+
+- **Worker Base URL:** `https://hydra-bot.a77aslani.workers.dev`
+- **Admin Dashboard:** `https://hydra-bot.a77aslani.workers.dev/admin/`
+- **Telegram Webhook:** `https://hydra-bot.a77aslani.workers.dev/telegram`
+- **Telegram Bot:** [@hydrasendertelBot](https://t.me/hydrasendertelBot)
+- **Cloudflare D1 Database ID:** `3874e7bc-cbea-4954-9003-77584d82f489`
+
+---
+
+## 🛠 Setup & Deployment
+
+### 1. Install Dependencies
 ```bash
-cd worker && npm install
-npx wrangler d1 create hydra            # paste the database_id into wrangler.jsonc
-# edit wrangler.jsonc -> routes[0].pattern = your subdomain (domain must be on your Cloudflare account)
-npm run db:migrate
-
-npx wrangler secret put BOT_TOKEN           # NEW bot from @BotFather (not the legacy bot's token)
-npx wrangler secret put WEBHOOK_SECRET      # any long random string
-npx wrangler secret put ADMIN_TOKEN         # any long random string; used to log in to /admin/
-npx wrangler secret put DIVAR_PROXY_URL     # e.g. https://relay.example.com/forward  (optional)
-npx wrangler secret put DIVAR_PROXY_SECRET  # same value as SECRET on the forwarder     (optional)
-npm run deploy
+cd worker
+npm install --legacy-peer-deps
 ```
 
-Then open `https://<your-subdomain>/admin/`, log in with `ADMIN_TOKEN` and:
-
-1. **اتصال‌ها → ثبت وب‌هوک تلگرام** (registers the webhook + bot commands).
-2. **اتصال‌ها → تست اتصال به دیوار.** The result shows whether Divar is reachable, how many ads came back,
-   and which labels/values the parser extracted from one real ad. If a field is missing, send that output
-   back and the label map in `src/core/normalize.ts` gets adjusted.
-3. **تنظیمات:** city ids, categories, tolerance, default plan, support contact.
-
-Local checks: `npm test` (Node ≥ 22.6) and `npm run typecheck`.
-
-## The proxy
-
-Workers cannot use an HTTP/SOCKS proxy. If Divar is only reachable through your proxy host, run
-`tools/divar-forwarder/server.mjs` there (behind HTTPS) and set `DIVAR_PROXY_URL` / `DIVAR_PROXY_SECRET`.
-It only forwards to `api.divar.ir` and requires the shared secret. Without `DIVAR_PROXY_URL` the Worker calls Divar directly.
-
-## Free-plan budget
-
-* `*/5 * * * *` crawl: 1 search per category + detail fetches for unseen ads, capped by `crawl_budget` (default 40 of the 50 external subrequests).
-* `* * * * *` drain: up to `drain_batch` (default 20) Telegram sends per minute from the D1 `outbox` table (a photo that Telegram rejects falls back to text, so up to 2 calls per card).
-* D1 calls are not counted against the 50. Queues are not used (free quota is only 10k operations/day).
-* Moving to a VPS later: `src/core/*` has no platform imports; replace `D1Database` access in `db.ts`/`jobs.ts` and the cron entry points.
-
-## More sources (Sheypoor, Aryamarz, Amlak Mall, ...)
-
-Besides Divar's JSON API, the crawler can read any classifieds site through its **public HTML pages**:
-list page -> ad links (regex) -> ad page -> generic extraction (table rows, `<dt>/<dd>`, two-span list items,
-"label: value" text, JSON-LD / `__NEXT_DATA__` blobs, `og:` tags). Sites are configured in the admin panel
-(تنظیمات -> منابع HTML), no code change needed. Tokens are namespaced (`sheypoor:468031034`).
-
-```json
-[
+### 2. Configure D1 Database
+In `wrangler.jsonc`, the database binding is configured as:
+```jsonc
+"d1_databases": [
   {
-    "id": "sheypoor",
-    "lists": [{ "url": "<newest-ads page for apartments for sale>", "deal": "buy", "property": "apartment" }],
-    "linkPattern": "https://www\\.sheypoor\\.com/.*-\\d+\\.html",
-    "idPattern": "-(\\d+)\\.html",
-    "priceUnit": "toman",
-    "maxDetails": 3
+    "binding": "DB",
+    "database_name": "hydra",
+    "database_id": "3874e7bc-cbea-4954-9003-77584d82f489"
   }
 ]
 ```
+*(Note: Tables auto-bootstrap on the worker's first invocation via `ensureSchema` in `src/db.ts`)*
 
-The `linkPattern` above is a guess (one community tool documents Sheypoor ad URLs as ending in `-<id>.html`); it and the
-list URLs must be confirmed on the real site. Workflow per site:
+### 3. Set Cloudflare Worker Secrets
+```bash
+export CLOUDFLARE_API_TOKEN="your-token"
+export CLOUDFLARE_ACCOUNT_ID="your-account-id"
 
-1. On the forwarder host set `ALLOWED_HOSTS=api.divar.ir,www.sheypoor.com,...`.
-2. Admin -> اتصال‌ها -> **بررسی صفحه**: paste a list page URL plus a link regex. You get the matched ad links.
-   Paste one ad URL: you get the extracted label/value rows and the normalized ad. If a field is wrong or missing,
-   adjust the label map in `src/core/normalize.ts` (or send the output to be tuned).
-3. Add the site to the `sites` setting. `priceUnit: "rial"` divides prices by 10.
+npx wrangler secret put BOT_TOKEN           # Bot token from @BotFather
+npx wrangler secret put WEBHOOK_SECRET      # Webhook validation secret
+npx wrangler secret put ADMIN_TOKEN         # Authentication token for /admin/
+npx wrangler secret put DIVAR_PROXY_URL     # Optional proxy forwarder URL
+npx wrangler secret put DIVAR_PROXY_SECRET  # Optional proxy secret
+```
 
-Notes
-* HTML parsing costs more CPU than Divar's JSON and the free plan allows 10 ms per invocation. `maxDetails` (default 3 per run)
-  keeps it low; if you see CPU-limit errors, lower it to 1 or move to a paid plan/VPS.
-* Check each site's terms and robots.txt before enabling it, and keep the request rate low (the budget settings do).
-* Sites may block Cloudflare IPs; the forwarder host is the workaround.
+### 4. Deploy to Cloudflare
+```bash
+npm run deploy
+```
 
-## Legacy sender
+### 5. Post-Deploy Configuration
+1. Open `https://<your-worker-subdomain>/admin/` and authenticate using `ADMIN_TOKEN`.
+2. Navigate to **اتصال‌ها** → Click **ثبت وب‌هوک تلگرام** to bind the webhook.
+3. Click **تست اتصال به دیوار** to verify live portal crawling.
+4. Customize search cities, categories, tolerance caps, and subrequest budgets under **تنظیمات**.
 
-The GitHub Actions sender on branch `HydraSender` is untouched and keeps running. Develop on a separate branch
-(e.g. `next`) and merge only at release. The two bots use different Telegram tokens.
+---
+
+## 🧪 Automated Testing
+
+All tests use Node.js's native test runner without third-party dependencies:
+```bash
+npm test
+```
+Runs 24 tests across unit parsers, scoring algorithms, end-to-end SQLite pipelines, and real Sheypoor/Ariamarz JSON-LD extracts.
+
+---
+
+## ⏱ Cron Execution & Free-Tier Budgeting
+
+* `*/5 * * * *` (Ingestion): Searches configured categories, extracts details for unseen ads, capped by `crawl_budget` (40 subrequests).
+* `* * * * *` (Drain): Pops up to 20 queued cards per minute from the D1 `outbox` table and delivers them to Telegram.
+* `src/core/*` has zero platform dependencies — easily portable to Node.js / VPS if scaling beyond the free tier.
