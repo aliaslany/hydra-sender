@@ -1,10 +1,12 @@
-# Divar Telegram Bot
+# Hydra Real Estate & Divar Multi-Messenger Bot
 
-A scheduled crawler and notifier for [Divar](https://divar.ir) (Iran's largest classifieds app) that watches one or more cities/categories for new listings and posts them — with rich details, auto-generated hashtags, and optional "likely sold/rented" alerts — to a Telegram chat or channel.
+This repository contains two systems:
+1. **[NEW] Real Estate Agent Platform (`worker/`)**: An interactive Telegram bot on **Cloudflare Workers (100% Free Plan)** with D1 database, multi-portal crawling (Divar, Sheypoor, Ariamarz), 10–15% tolerance matching and scoring algorithm, rich Card Views, and a web admin dashboard (`/admin/`). See [`worker/README.md`](worker/README.md) for quick deploy instructions.
+2. **Legacy Channel Broadcaster (root)**: A scheduled crawler running via GitHub Actions that broadcasts Divar ads to Telegram, Bale, Rubika, and Eitaa channels.
 
-> This is a heavily modified fork of [debMan/divar-telegram-bot](https://github.com/debMan/divar-telegram-bot) (originally [ehcaning/divar-telegram-bot](https://github.com/ehcaning/divar-telegram-bot)). Divar changed its unofficial API since the original project was written, so the crawling logic, project structure, and feature set here are substantially different.
+---
 
-## Features
+## Features (Legacy Channel Broadcaster)
 
 - **Runs on GitHub Actions** — no server to host or pay for. A scheduled workflow runs the bot every few minutes.
 - **Multi-city search** — search across several cities at once (`SEARCH_CITY_IDS`).

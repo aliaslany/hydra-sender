@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پنل مدیریت ربات املاک</title>
+<style>
+:root{--ink:#1c2b33;--mute:#5d6f78;--paper:#eef2f4;--surface:#fff;--line:#d3dce1;--accent:#0b6e6e;--on-accent:#fff;--danger:#b3261e;--ok:#17653b}
+@media (prefers-color-scheme:dark){:root{--ink:#e6eef1;--mute:#93a5ae;--paper:#11191d;--surface:#192329;--line:#2b3a42;--accent:#4fc1b8;--on-accent:#0c1a1c;--danger:#ff8a80;--ok:#7ad69b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 Vazirmatn,IRANSans,Tahoma,system-ui,sans-serif}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center}
+h1{font-size:18px;margin:0}
+.stats{display:flex;gap:22px;flex-wrap:wrap;margin-inline-start:auto}
+.stats b{display:block;font-size:20px;line-height:1.2}.stats span{color:var(--mute);font-size:13px}
+nav{display:flex;gap:4px;padding:10px 20px 0;max-width:1000px;margin:auto}
+nav button{border:0;background:none;color:var(--mute);font:inherit;padding:8px 14px;border-bottom:2px solid transparent;cursor:pointer}
+nav button[aria-selected=true]{color:var(--ink);border-color:var(--accent);font-weight:600}
+main{max-width:1000px;margin:0 auto;padding:16px 20px 60px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 10px;text-align:start;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mute);font-weight:500}
+input,select,textarea{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:7px 10px;max-width:100%}
+textarea{width:100%;min-height:90px;direction:ltr;font-family:ui-monospace,monospace;font-size:13px}
+label{display:block;margin:12px 0 4px;color:var(--mute);font-size:13px}
+button.b{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.b:hover{border-color:var(--accent)}
+button.p{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+button.d{color:var(--danger)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+.tag{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line)}
+.ok{color:var(--ok)}.bad{color:var(--danger)}
+pre{direction:ltr;text-align:left;background:var(--paper);padding:12px;border-radius:6px;overflow:auto;max-height:420px;font-size:12.5px}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-width:min(92vw,380px)}
+dialog::backdrop{background:#0008}
+#msg{position:fixed;inset-inline:0;bottom:14px;text-align:center;pointer-events:none}
+#msg span{background:var(--ink);color:var(--paper);padding:8px 16px;border-radius:8px;display:inline-block}
+</style>
+</head>
+<body>
+<header>
+  <h1>پنل مدیریت ربات املاک</h1>
+  <div class="stats" id="stats"></div>
+</header>
+
+<dialog id="login"><form method="dialog" id="loginForm">
+  <label for="tok">توکن مدیر (ADMIN_TOKEN)</label>
+  <input id="tok" type="password" autocomplete="off" style="width:100%" required>
+  <div class="row" style="margin:14px 0 0"><button class="b p">ورود</button></div>
+</form></dialog>
+
+<dialog id="grant"><form method="dialog" id="grantForm">
+  <b id="grantWho"></b>
+  <label for="gPlan">پلن</label><select id="gPlan" style="width:100%"></select>
+  <label for="gDays">مدت (روز) — خالی یعنی طبق پلن</label><input id="gDays" type="number" min="0" style="width:100%">
+  <label><input type="checkbox" id="gDaysInf"> بدون محدودیت زمانی</label>
+  <label for="gSearches">تعداد جستجو — خالی یعنی طبق پلن</label><input id="gSearches" type="number" min="0" style="width:100%">
+  <label><input type="checkbox" id="gSearchesInf"> بدون محدودیت تعداد جستجو</label>
+  <div class="row" style="margin:14px 0 0"><button class="b p">اعطای دسترسی</button><button class="b" value="cancel" formnovalidate>انصراف</button></div>
+</form></dialog>
+
+<nav id="tabs" role="tablist">
+  <button role="tab" data-t="users">کاربران</button>
+  <button role="tab" data-t="plans">پلن‌ها</button>
+  <button role="tab" data-t="settings">تنظیمات</button>
+  <button role="tab" data-t="conn">اتصال‌ها</button>
+</nav>
+<main><div class="panel" id="view"></div></main>
+<div id="msg" aria-live="polite"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fa = (n) => Number(n).toLocaleString('fa-IR');
+const day = (s) => (s ? new Date(s * 1000).toLocaleDateString('fa-IR') : '—');
+let token = sessionStorage.getItem('adm') || '', plans = [], tab = 'users';
+
+function toast(t) { const m = $('#msg'); m.innerHTML = '<span>' + esc(t) + '</span>'; setTimeout(() => (m.innerHTML = ''), 3000); }
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch('/api/admin' + path, {
+    method, headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (r.status === 401) { askLogin(); throw new Error('unauthorized'); }
+  const data = await r.json();
+  if (!r.ok) { toast(data.error || 'خطا'); throw new Error(data.error); }
+  return data;
+}
+
+function askLogin() { $('#login').showModal(); }
+$('#loginForm').onsubmit = () => { token = $('#tok').value; sessionStorage.setItem('adm', token); setTimeout(boot, 0); };
+
+async function loadStats() {
+  const s = await api('/stats');
+  $('#stats').innerHTML = [['users', 'کاربر'], ['active_searches', 'جستجوی فعال'], ['ads', 'آگهی'], ['pending', 'در صف ارسال'], ['failed', 'ارسال ناموفق']]
+    .map(([k, l]) => `<div><b>${fa(s[k])}</b><span>${l}</span></div>`).join('');
+}
+
+const views = {
+  async users() {
+    const q = $('#q')?.value ?? '';
+    const rows = await api('/users?q=' + encodeURIComponent(q));
+    $('#view').innerHTML = `<div class="row"><input id="q" placeholder="جستجو: شناسه یا نام" value="${esc(q)}"><button class="b" id="go">جستجو</button></div>
+    <table><tr><th>شناسه</th><th>نام</th><th>پلن</th><th>انقضا</th><th>جستجوی باقی‌مانده</th><th>وضعیت</th><th></th></tr>
+    ${rows.map((u) => `<tr><td>${u.id}</td><td>${esc(u.first_name || '')} ${u.username ? '@' + esc(u.username) : ''}</td>
+      <td>${esc(u.plan_name || '—')}</td><td>${day(u.expires_at)}</td><td>${u.searches_remaining == null ? 'نامحدود' : fa(u.searches_remaining)}</td>
+      <td>${u.is_blocked ? '<span class="tag bad">مسدود</span>' : u.bot_stopped ? '<span class="tag">ربات را بسته</span>' : '<span class="tag ok">فعال</span>'}</td>
+      <td><button class="b" data-grant="${u.id}" data-name="${esc(u.first_name || u.id)}">اعطای دسترسی</button>
+          <button class="b ${u.is_blocked ? '' : 'd'}" data-block="${u.id}" data-to="${u.is_blocked ? 0 : 1}">${u.is_blocked ? 'رفع مسدودی' : 'مسدود'}</button></td></tr>`).join('')
+      || '<tr><td colspan="7">کاربری پیدا نشد. کاربران پس از /start در ربات اینجا ظاهر می‌شوند.</td></tr>'}</table>`;
+    $('#go').onclick = views.users;
+    $('#q').onkeydown = (e) => e.key === 'Enter' && views.users();
+  },
+  async plans() {
+    plans = await api('/plans');
+    $('#view').innerHTML = `<table><tr><th>#</th><th>نام</th><th>نوع</th><th>مدت (روز)</th><th>تعداد جستجو</th><th>قیمت (تومان)</th></tr>
+    ${plans.map((p) => `<tr><td>${p.id}</td><td>${esc(p.name)}</td><td>${p.is_paid ? 'پولی' : 'رایگان'}</td>
+      <td>${p.duration_days ?? 'نامحدود'}</td><td>${p.max_searches ?? 'نامحدود'}</td><td>${p.price == null ? '—' : fa(p.price)}</td></tr>`).join('')}</table>
+    <form id="pf" class="row" style="margin-top:18px">
+      <div><label for="pn">نام پلن جدید</label><input id="pn" required></div>
+      <div><label for="pd">مدت (روز)</label><input id="pd" type="number" min="1" style="width:100px"></div>
+      <div><label for="ps">تعداد جستجو</label><input id="ps" type="number" min="1" style="width:100px"></div>
+      <div><label for="pp">قیمت</label><input id="pp" type="number" min="0" style="width:130px"></div>
+      <div><label><input type="checkbox" id="pa"> پولی</label></div>
+      <button class="b p">افزودن پلن</button></form>
+    <p style="color:var(--mute);font-size:13px">فیلد خالی یعنی نامحدود.</p>`;
+    $('#pf').onsubmit = async (e) => {
+      e.preventDefault();
+      await api('/plans', 'POST', { name: $('#pn').value, duration_days: $('#pd').value, max_searches: $('#ps').value, price: $('#pp').value, is_paid: $('#pa').checked });
+      toast('پلن اضافه شد'); views.plans();
+    };
+  },
+  async settings() {
+    const s = await api('/settings');
+    const f = (k, l, h = '') => `<label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" value="${esc(s[k])}" style="width:100%"><small style="color:var(--mute)">${h}</small>`;
+    $('#view').innerHTML = `<form id="sf">
+      ${f('city_ids', 'شناسهٔ شهرهای دیوار', 'با ویرگول جدا کنید، مثل 1,3')}
+      <label for="s_categories">دسته‌بندی‌های خزش (slug دیوار، نوع معامله، نوع ملک)</label>
+      <textarea id="s_categories" data-k="categories">${esc(s.categories)}</textarea>
+      <label for="s_sites">منابع HTML (شیپور، آریامرز، املاک مال...) — آرایهٔ JSON؛ برای ساختار به README مراجعه کنید</label>
+      <textarea id="s_sites" data-k="sites">${esc(s.sites)}</textarea>
+      ${f('tolerance', 'تلورانس بودجه و متراژ (۰ تا ۰٫۱۵)', 'مثلاً 0.1 یعنی ۱۰٪')}
+      ${f('min_score', 'حداقل درصد تطابق برای ارسال (۰ تا ۱۰۰)')}
+      ${f('default_plan_id', 'شناسهٔ پلن پیش‌فرض کاربران جدید', 'خالی = بدون دسترسی تا اعطای دستی')}
+      ${f('support_contact', 'راه ارتباط با پشتیبانی (در پیام‌های اشتراک نشان داده می‌شود)')}
+      ${f('crawl_budget', 'سقف درخواست خارجی در هر خزش (حداکثر ۴۵)')}
+      ${f('drain_batch', 'تعداد پیام ارسالی در هر دقیقه (حداکثر ۲۴)')}
+      ${f('retention_days', 'نگهداری آگهی‌ها (روز)')}
+      <div class="row" style="margin-top:18px"><button class="b p">ذخیره تنظیمات</button></div></form>`;
+    $('#sf').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = {}; document.querySelectorAll('[data-k]').forEach((el) => (body[el.dataset.k] = el.value));
+      await api('/settings', 'PUT', body); toast('ذخیره شد');
+    };
+  },
+  async conn() {
+    $('#view').innerHTML = `<div class="row"><button class="b p" id="t1">تست اتصال به دیوار</button><button class="b" id="t2">ثبت وب‌هوک تلگرام</button></div><div class="row" style="margin-top:14px"><div style="flex:1;min-width:240px"><label for="pu">بررسی یک صفحهٔ آگهی یا فهرست (از مسیر همان پروکسی)</label><input id="pu" dir="ltr" placeholder="https://..." style="width:100%"></div>
+      <div><label for="pp2">الگوی لینک آگهی (regex، اختیاری)</label><input id="pp2" dir="ltr" style="width:200px"></div><button class="b" id="t3">بررسی صفحه</button></div>
+    <pre id="out">نتیجه اینجا نمایش داده می‌شود.</pre>`;
+    const run = (id, p, m) => ($(id).onclick = async () => { $('#out').textContent = '…'; try { $('#out').textContent = JSON.stringify(await api(p, m), null, 2); } catch (e) { $('#out').textContent = String(e.message); } });
+    run('#t1', '/spike', 'GET'); run('#t2', '/telegram/setup', 'POST');
+    $('#t3').onclick = async () => {
+      $('#out').textContent = '…';
+      const q = new URLSearchParams({ url: $('#pu').value.trim() }); if ($('#pp2').value) q.set('pattern', $('#pp2').value);
+      try { $('#out').textContent = JSON.stringify(await api('/probe?' + q), null, 2); } catch (e) { $('#out').textContent = String(e.message); }
+    };
+  },
+};
+
+async function show(t) {
+  tab = t;
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.t === t));
+  await views[t]();
+}
+$('#tabs').onclick = (e) => e.target.dataset.t && show(e.target.dataset.t);
+
+document.addEventListener('click', async (e) => {
+  const g = e.target.closest('[data-grant]'), b = e.target.closest('[data-block]');
+  if (g) {
+    plans = await api('/plans');
+    $('#grantWho').textContent = 'اعطای دسترسی به ' + g.dataset.name;
+    $('#gPlan').innerHTML = plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    $('#grantForm').dataset.user = g.dataset.grant;
+    $('#grant').showModal();
+  }
+  if (b) { await api(`/users/${b.dataset.block}/block`, 'POST', { blocked: b.dataset.to === '1' }); toast('انجام شد'); views.users(); }
+});
+
+$('#grantForm').onsubmit = async (e) => {
+  if (e.submitter?.value === 'cancel') return;
+  const body = { plan_id: Number($('#gPlan').value) };
+  if ($('#gDaysInf').checked) body.days = null; else if ($('#gDays').value !== '') body.days = Number($('#gDays').value);
+  if ($('#gSearchesInf').checked) body.searches = null; else if ($('#gSearches').value !== '') body.searches = Number($('#gSearches').value);
+  await api(`/users/${e.target.dataset.user}/grant`, 'POST', body); toast('دسترسی اعطا شد'); views.users(); loadStats();
+};
+
+async function boot() {
+  if (!token) return askLogin();
+  try { await loadStats(); await show(tab); } catch { /* login dialog already shown on 401 */ }
+}
+boot();
+</script>
+</body>
+</html>
