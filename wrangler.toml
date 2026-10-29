@@ -1,0 +1,18 @@
+name = "hydra-bot"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# 1-Minute Cron Trigger for Backfill & Live Streaming
+[triggers]
+crons = ["* * * * *"]
+
+# Cloudflare D1 Relational Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "hydra-db"
+database_id = "3874e7bc-cbea-4954-9003-77584d82f489"
+
+[vars]
+DEFAULT_TIMEZONE = "Asia/Tehran"
+MAX_CHANNEL_MSGS_PER_MIN = "15"
+DEFAULT_TOLERANCE_PCT = "0.15"
