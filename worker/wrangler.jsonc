@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hydra-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "workers_dev": true,
+  // Optional custom domain (uncomment and replace with your domain if desired):
+  // "routes": [{ "pattern": "bot.yourdomain.com", "custom_domain": true }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "hydra", "database_id": "3874e7bc-cbea-4954-9003-77584d82f489", "migrations_dir": "migrations" }
+  ],
+  // Admin page is served from ./public/admin
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  // Free plan allows 5 cron triggers per account; this uses 2.
+  "triggers": { "crons": ["*/5 * * * *", "* * * * *"] },
+  "observability": { "enabled": true }
+  // Secrets (wrangler secret put): BOT_TOKEN, WEBHOOK_SECRET, ADMIN_TOKEN, DIVAR_PROXY_URL, DIVAR_PROXY_SECRET
+}
