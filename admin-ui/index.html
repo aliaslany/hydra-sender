@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>پنل مدیریت ربات املاک | Hydra-Sender Admin</title>
+  <title>پنل مدیریت ربات املاک هیدرا | Hydra-Sender Admin</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     :root {
       --bg: #f8fafc; --surface: #ffffff; --text: #0f172a; --muted: #64748b;
@@ -61,7 +63,8 @@
     .badge-muted { background: #f1f5f9; color: #475569; }
     dialog {
       border: 1px solid var(--border); border-radius: 0.6rem; padding: 1.5rem;
-      max-width: 680px; width: 95%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+      max-width: 780px; width: 95%; max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
     }
     dialog::backdrop { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px); }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 1rem; }
@@ -79,9 +82,9 @@
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); font-size: 0.875rem;
     }
     .telegram-card-preview {
-      background: #182533; color: #f5f5f5; border-radius: 0.6rem; padding: 1rem 1.25rem;
-      font-family: system-ui, sans-serif; line-height: 1.7; white-space: pre-wrap;
-      direction: rtl; text-align: right; margin-top: 1rem; border: 1px solid #2b3b4d;
+      background: #182533; color: #f5f5f5; border-radius: 0.6rem; padding: 1.25rem;
+      font-family: system-ui, -apple-system, sans-serif; line-height: 1.7; white-space: pre-wrap;
+      direction: rtl; text-align: right; margin-top: 1rem; border: 1px solid #2b3b4d; font-size: 0.9rem;
     }
     .telegram-btn-preview {
       display: inline-block; background: #2b5278; color: #fff; text-decoration: none;
@@ -95,6 +98,8 @@
     .score-box.fail { background: #fee2e2; color: #991b1b; }
     .actions-cell { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
     .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+    #rule-map, #sim-map { height: 260px; width: 100%; border-radius: 0.4rem; border: 1px solid var(--border); margin-top: 0.35rem; z-index: 1; }
+    .map-controls-bar { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 0.35rem; }
   </style>
 </head>
 <body>
@@ -129,32 +134,35 @@
     <h3 id="rule-dialog-title" style="margin-top:0;">تعریف فیلتر دو مرحله‌ای دیوار</h3>
     <form id="rule-form" onsubmit="submitRuleForm(event)">
       <input type="hidden" id="r-edit-id" value="" />
+      
+      <!-- Core Information -->
       <div class="form-grid">
         <div class="form-group">
           <label>عنوان فیلتر:</label>
-          <input type="text" id="r-name" required placeholder="مثلاً: آپارتمان ۲ خواب سعادت‌آباد" />
+          <input type="text" id="r-name" required placeholder="مثلاً: آپارتمان شخصی علی‌آباد کتول" />
         </div>
         <div class="form-group">
           <label>کانال تلگرام مقصد (@channel یا شناسه عددی):</label>
-          <input type="text" id="r-channel" required placeholder="@my_estate_channel" />
+          <input type="text" id="r-channel" required placeholder="@aliabadmelk" />
         </div>
         <div class="form-group">
           <label>نوع معامله و ملک (Stage 1):</label>
           <select id="r-category">
-            <option value="apartment-sell|BUY|APARTMENT">فروش آپارتمان (apartment-sell)</option>
-            <option value="apartment-rent|RENT|APARTMENT">اجاره آپارتمان (apartment-rent)</option>
-            <option value="buy-residential|BUY|ALL_RESIDENTIAL">فروش مسکونی/ویلایی (buy-residential)</option>
-            <option value="residential-rent|RENT|ALL_RESIDENTIAL">اجاره مسکونی (residential-rent)</option>
-            <option value="buy-commercial-property|BUY|COMMERCIAL">فروش اداری/تجاری (buy-commercial-property)</option>
+            <option value="apartment-sell|BUY|APARTMENT">فروش آپارتمان مسکونی (apartment-sell)</option>
+            <option value="apartment-rent|RENT|APARTMENT">رهن و اجاره آپارتمان (apartment-rent)</option>
+            <option value="buy-residential|BUY|ALL_RESIDENTIAL">فروش مسکونی / ویلایی / کلنگی (buy-residential)</option>
+            <option value="residential-rent|RENT|ALL_RESIDENTIAL">رهن و اجاره مسکونی / ویلا (residential-rent)</option>
+            <option value="buy-commercial-property|BUY|COMMERCIAL">فروش تجاری خدماتی / مغازه (buy-commercial-property)</option>
+            <option value="rent-commercial-property|RENT|COMMERCIAL">اجاره تجاری / مغازه (rent-commercial-property)</option>
           </select>
         </div>
         <div class="form-group">
-          <label>کد محله‌ها در دیوار (جداشده با کاما):</label>
-          <input type="text" id="r-districts" placeholder="82,920 (خالی = کل شهر تهران)" value="82" />
+          <label>کد شهر دیوار (۸۲۳ = علی‌آباد کتول، ۱ = تهران):</label>
+          <input type="text" id="r-city-id" value="823" placeholder="823" />
         </div>
         <div class="form-group">
           <label>حداکثر بودجه خرید / ودیعه رهن (تومان):</label>
-          <input type="number" id="r-max-budget" value="12000000000" />
+          <input type="number" id="r-max-budget" value="10000000000" />
         </div>
         <div class="form-group">
           <label>حداکثر اجاره ماهانه (تومان - ویژه اجاره):</label>
@@ -163,8 +171,8 @@
         <div class="form-group">
           <label>بازه متراژ (حداقل - حداکثر متر مربع):</label>
           <div style="display:flex; gap:0.35rem;">
-            <input type="number" id="r-min-area" placeholder="حداقل (90)" value="90" style="width:50%" />
-            <input type="number" id="r-max-area" placeholder="حداکثر (140)" value="140" style="width:50%" />
+            <input type="number" id="r-min-area" placeholder="حداقل (75)" value="75" style="width:50%" />
+            <input type="number" id="r-max-area" placeholder="حداکثر (250)" value="250" style="width:50%" />
           </div>
         </div>
         <div class="form-group">
@@ -179,14 +187,48 @@
           <label>حداقل امتیاز تطابق (Match Score %):</label>
           <input type="number" id="r-min-score" min="40" max="100" value="65" />
         </div>
-        <div class="form-group" id="group-backfill">
-          <label>تعداد آگهی هدف برای Backfill اولیه:</label>
-          <input type="number" id="r-backfill" min="0" max="100" value="30" />
+        <div class="form-group">
+          <label>سقف سن آگهی در دیوار (ساعت گذشته):</label>
+          <input type="number" id="r-max-age" min="1" max="720" value="24" title="فقط آگهی‌های ۲۴ ساعت گذشته دیوار ارسال شوند" />
         </div>
       </div>
 
-      <div style="background:#f1f5f9; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem;">
-        <h4 style="margin:0 0 0.5rem 0; font-size:0.88rem; color:#1e293b;">فیلترهای مرحله دوم (امکانات، اسکلت، جهت، کابینت):</h4>
+      <!-- Feature 1: Map Polygon Boundary -->
+      <div style="background:#f1f5f9; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #cbd5e1;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <h4 style="margin:0; font-size:0.9rem; color:#1e293b;">🗺 تعیین محدوده جغرافیایی خط‌کشی‌شده روی نقشه (Polygon):</h4>
+          <span id="polygon-status-badge" class="badge badge-muted">بدون مرزبندی (کل شهر)</span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin:0.25rem 0 0.5rem 0;">
+          روی نقشه کلیک کنید تا رأس‌های محدوده مورد نظر (مانند نقشه دیوار در علی‌آباد کتول و مزرعه کتول) ترسیم شوند.
+        </p>
+        <div id="rule-map"></div>
+        <div class="map-controls-bar">
+          <div style="display:flex; gap:0.35rem;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="clearRulePolygon()">🗑 حذف مرزبندی</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="centerMapOnAliabad()">🎯 مرکز علی‌آباد کتول</button>
+          </div>
+          <span style="font-size:0.75rem; color:var(--muted);">با کلیک مکرر روی نقشه چندضلعی دلخواه خود را رسم کنید.</span>
+        </div>
+        <textarea id="r-polygon-json" style="width:100%; height:55px; font-size:0.75rem; font-family:monospace; margin-top:0.4rem; display:none;" placeholder="مختصات چندضلعی [[lat, lon], ...]"></textarea>
+      </div>
+
+      <!-- Feature 2: Anti-Agency Filter -->
+      <div style="background:#fef2f2; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #fecaca;">
+        <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:#991b1b;">🚫 فیلتر حذف آگهی‌های دلال‌ها، املاک و مشاورین (فقط شخصی مالک):</h4>
+        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; font-weight:600; cursor:pointer;">
+          <input type="checkbox" id="r-exclude-agency" checked />
+          عدم ارسال آگهی‌های دارای کلمات املاک، مشاور، بنگاه، دپارتمان، همکار و... (فقط آگهی‌های شخصی مالک)
+        </label>
+        <div class="form-group" style="margin-top:0.5rem;">
+          <label style="font-size:0.78rem;">کلمات کلیدی ممنوعه (جداشده با کاما):</label>
+          <input type="text" id="r-negative-words" value="املاک, مشاور, مشاورین, بنگاه, دپارتمان, دفتر املاک, همکار, همکاران, کمیسیون, آژانس املاک, کارگزاری" />
+        </div>
+      </div>
+
+      <!-- Feature 3: Stage 2 Features -->
+      <div style="background:#f8fafc; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid var(--border);">
+        <h4 style="margin:0 0 0.5rem 0; font-size:0.88rem; color:#1e293b;">فیلترهای مرحله دوم (امکانات، اسکلت، جهت):</h4>
         <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:0.6rem;">
           <label><input type="checkbox" id="r-parking" checked /> پارکینگ الزامی</label>
           <label><input type="checkbox" id="r-elevator" checked /> آسانسور الزامی</label>
@@ -208,7 +250,7 @@
               <option value="">همه جهات</option>
               <option value="NORTH">شمالی</option>
               <option value="SOUTH">جنوبی</option>
-              <option value="DUAL">دوکله (شمالی-جنوبی)</option>
+              <option value="DUAL">دوکله / دو نبش</option>
             </select>
           </div>
         </div>
@@ -230,11 +272,11 @@
     <form id="channel-form" onsubmit="submitChannelForm(event)">
       <div class="form-group" style="margin-bottom:0.75rem;">
         <label>شناسه چت یا آی‌دی عمومی کانال:</label>
-        <input type="text" id="ch-chat-id" required placeholder="@my_amlak_channel یا -100xxxxxxxxxx" />
+        <input type="text" id="ch-chat-id" required placeholder="@aliabadmelk یا -100xxxxxxxxxx" />
       </div>
       <div class="form-group" style="margin-bottom:1rem;">
         <label>عنوان نمایشی کانال:</label>
-        <input type="text" id="ch-title" placeholder="مثلاً: املاک سعادت‌آباد" />
+        <input type="text" id="ch-title" placeholder="مثلاً: املاک امیران علی‌آباد کتول" />
       </div>
       <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
         <button type="submit" class="btn">ثبت و اتصال کانال</button>
@@ -284,10 +326,10 @@
   <!-- Navigation Tab Bar -->
   <nav role="tablist" aria-label="بخش‌های پنل مدیریت">
     <button role="tab" id="tab-overview" aria-selected="true" onclick="switchTab('overview')">📊 داشبورد و وضعیت صف</button>
-    <button role="tab" id="tab-rules" aria-selected="false" onclick="switchTab('rules')">🎯 فیلترهای ۲ مرحله‌ای</button>
+    <button role="tab" id="tab-rules" aria-selected="false" onclick="switchTab('rules')">🎯 فیلترهای ۲ مرحله‌ای و نقشه</button>
     <button role="tab" id="tab-channels" aria-selected="false" onclick="switchTab('channels')">📢 کانال‌های تلگرام (@channel)</button>
     <button role="tab" id="tab-subscriptions" aria-selected="false" onclick="switchTab('subscriptions')">💎 کاربران و اشتراک‌ها</button>
-    <button role="tab" id="tab-simulator" aria-selected="false" onclick="switchTab('simulator')">🧪 تست امتیاز تطابق و Card View</button>
+    <button role="tab" id="tab-simulator" aria-selected="false" onclick="switchTab('simulator')">🧪 تست قالب جدید و شبیه‌ساز</button>
   </nav>
 
   <!-- Main Container -->
@@ -309,6 +351,11 @@
       users: [],
       plans: []
     };
+
+    // Global Leaflet map variables
+    let ruleMap = null;
+    let rulePolygonLayer = null;
+    let rulePoints = [];
 
     function notify(msg) {
       const el = document.getElementById('toast-region');
@@ -356,7 +403,7 @@
     async function triggerCronTick() {
       try {
         notify('در حال ارسال درخواست اجرای Cron Tick...');
-        const res = await apiCall('/api/internal/cron-tick', { method: 'POST' });
+        await apiCall('/api/internal/cron-tick', { method: 'POST' });
         notify('✅ اجرای کرون با موفقیت آغاز شد.');
         setTimeout(fetchCurrentTabData, 2500);
       } catch (e) {
@@ -439,7 +486,7 @@
             <div class="kpi-val">${state.overview.activeChannels}</div>
           </div>
           <div class="card">
-            <div class="kpi-title">فیلترهای استریم لحظه‌ای (LIVE)</div>
+            <div class="kpi-title">فیلترهای لحظه‌ای فعال (LIVE)</div>
             <div class="kpi-val">${state.overview.liveRules}</div>
           </div>
           <div class="card">
@@ -461,7 +508,7 @@
             </div>
           </div>
           <p style="color:var(--muted); font-size:0.875rem; margin:0;">
-            سیستم به صورت خودکار هر ۱ دقیقه یک‌بار توسط Cron Trigger آگهی‌های جدید دیوار را دریافت کرده و در صورت انطباق با فیلترها و امتیاز بالای درصد تعیین‌شده به کانال تلگرام ارسال می‌کند.
+            سیستم به صورت خودکار هر ۱ دقیقه یک‌بار توسط Cron Trigger آگهی‌های جدید دیوار را دریافت کرده و پس از فیلتر محدوده نقشه و حذف املاک به کانال تلگرام ارسال می‌کند.
           </p>
         </div>
 
@@ -490,49 +537,58 @@
 
     // TAB 2: RULES
     function renderRulesTab(container) {
-      const rows = (state.rules || []).map(r => `
-        <tr>
-          <td>
-            <strong>${r.name}</strong>
-            <div style="font-size:0.75rem; color:var(--muted);">ID: ${r.id}</div>
-          </td>
-          <td><code>${r.chat_id || r.channel_id}</code></td>
-          <td>${r.divar_category_slug}</td>
-          <td>
-            ${r.deal_type === 'RENT' ? 'رهن: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد') : 'بودجه: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد')}
-            <br/><span style="font-size:0.78rem; color:var(--muted);">${r.min_area || 0} تا ${r.max_area || '∞'} متر</span>
-          </td>
-          <td>
-            ${Math.round((r.tolerance_pct || 0.15) * 100)}٪
-            <br/><span style="font-size:0.78rem; color:var(--muted);">حداقل: ${r.min_match_score}٪</span>
-          </td>
-          <td>
-            <span class="badge ${r.phase === 'LIVE' ? 'badge-live' : 'badge-backfill'}">${r.phase || 'BACKFILL'}</span>
-            <div style="font-size:0.75rem; color:var(--muted);">${r.backfill_dispatched_count || 0} از ${r.backfill_target_count || 30}</div>
-          </td>
-          <td>
-            <span class="badge ${r.is_active ? 'badge-live' : 'badge-danger'}">${r.is_active ? 'فعال' : 'غیرفعال'}</span>
-          </td>
-          <td>
-            <div class="actions-cell">
-              <button class="btn btn-outline btn-sm" onclick="toggleRuleActive('${r.id}')" title="فعال / غیرفعال">
-                ${r.is_active ? '⏸ غیرفعال' : '▶️ فعال'}
-              </button>
-              <button class="btn btn-outline btn-sm" onclick="openEditRuleModal('${r.id}')" title="ویرایش پارامترها">✏️ ویرایش</button>
-              <button class="btn btn-outline btn-sm" onclick="resetRuleBackfill('${r.id}')" title="شروع مجدد دریافت آرشیو">🔄 ریست آرشیو</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')" title="حذف فیلتر">🗑</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
+      const rows = (state.rules || []).map(r => {
+        let polyCount = 0;
+        try {
+          const p = JSON.parse(r.geo_polygon_json || '[]');
+          if (Array.isArray(p)) polyCount = p.length;
+        } catch(_) {}
+
+        return `
+          <tr>
+            <td>
+              <strong>${r.name}</strong>
+              <div style="font-size:0.75rem; color:var(--muted);">شهر: ${r.city_ids_json === '["823"]' ? 'علی‌آباد کتول' : r.city_ids_json}</div>
+            </td>
+            <td><code>${r.chat_id || r.channel_id}</code></td>
+            <td>${r.divar_category_slug}</td>
+            <td>
+              ${r.deal_type === 'RENT' ? 'رهن: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد') : 'بودجه: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد')}
+              <br/><span style="font-size:0.78rem; color:var(--muted);">${r.min_area || 0} تا ${r.max_area || '∞'} متر</span>
+            </td>
+            <td>
+              ${polyCount >= 3 ? '<span class="badge badge-live">📍 مرزبندی (' + polyCount + ' نقطه)</span>' : '<span class="badge badge-muted">کل شهر</span>'}
+              <br/>
+              ${r.exclude_agency !== 0 ? '<span class="badge badge-warn" style="margin-top:0.2rem;">🚫 حذف املاک</span>' : '<span class="badge badge-muted">همه آگهی‌ها</span>'}
+            </td>
+            <td>
+              <span class="badge ${r.phase === 'LIVE' ? 'badge-live' : 'badge-backfill'}">${r.phase || 'BACKFILL'}</span>
+              <div style="font-size:0.75rem; color:var(--muted);">سقف سن: ${r.max_post_age_hours || 24} ساعت</div>
+            </td>
+            <td>
+              <span class="badge ${r.is_active ? 'badge-live' : 'badge-danger'}">${r.is_active ? 'فعال' : 'غیرفعال'}</span>
+            </td>
+            <td>
+              <div class="actions-cell">
+                <button class="btn btn-outline btn-sm" onclick="toggleRuleActive('${r.id}')" title="فعال / غیرفعال">
+                  ${r.is_active ? '⏸ غیرفعال' : '▶️ فعال'}
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="openEditRuleModal('${r.id}')" title="ویرایش پارامترها">✏️ ویرایش</button>
+                <button class="btn btn-outline btn-sm" onclick="resetRuleBackfill('${r.id}')" title="شروع مجدد دریافت آرشیو">🔄 ریست آرشیو</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')" title="حذف فیلتر">🗑</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
 
       container.innerHTML = `
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
             <div>
-              <h3 style="margin:0;">🎯 لیست فیلترهای استخراج و ارسال دو مرحله‌ای</h3>
+              <h3 style="margin:0;">🎯 لیست فیلترهای استخراج و ارسال هوشمند</h3>
               <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
-                فیلترهای فعال آگهی‌های دیوار را بر اساس معیارهای قیمت، متراژ (با تلورانس ۱۰ تا ۱۵ درصد) و مشخصات مرحله دوم سنجیده و به کانال ارسال می‌کنند.
+                پایش دیوار بر اساس بودجه، متراژ، محدوده خط‌کشی‌شده روی نقشه و حذف خودکار مشاورین و آژانس‌های املاک.
               </p>
             </div>
             <button class="btn" onclick="openCreateRuleModal()">➕ تعریف فیلتر دو مرحله‌ای جدید</button>
@@ -545,8 +601,8 @@
                   <th>کانال مقصد</th>
                   <th>دسته دیوار</th>
                   <th>بودجه و متراژ</th>
-                  <th>تلورانس و امتیاز</th>
-                  <th>فاز و پیشرفت</th>
+                  <th>محدوده و فیلتر مشاور</th>
+                  <th>فاز و سن آگهی</th>
                   <th>وضعیت</th>
                   <th>عملیات</th>
                 </tr>
@@ -560,28 +616,108 @@
       `;
     }
 
+    // Leaflet Map Logic for Rule Dialog
+    function initRuleMap(initialPoints = []) {
+      const container = document.getElementById('rule-map');
+      if (!container) return;
+
+      if (!ruleMap) {
+        // Center on Aliabad Katul (36.9025, 54.8558)
+        ruleMap = L.map('rule-map').setView([36.9025, 54.8558], 13);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(ruleMap);
+
+        ruleMap.on('click', function(e) {
+          const lat = parseFloat(e.latlng.lat.toFixed(6));
+          const lng = parseFloat(e.latlng.lng.toFixed(6));
+          rulePoints.push([lat, lng]);
+          updatePolygonDisplay();
+        });
+      }
+
+      rulePoints = initialPoints;
+      updatePolygonDisplay();
+
+      setTimeout(() => {
+        if (ruleMap) ruleMap.invalidateSize();
+      }, 250);
+    }
+
+    function updatePolygonDisplay() {
+      if (!ruleMap) return;
+      if (rulePolygonLayer) {
+        ruleMap.removeLayer(rulePolygonLayer);
+        rulePolygonLayer = null;
+      }
+
+      const badge = document.getElementById('polygon-status-badge');
+      const textarea = document.getElementById('r-polygon-json');
+
+      if (rulePoints.length >= 3) {
+        rulePolygonLayer = L.polygon(rulePoints, {
+          color: '#2563eb',
+          weight: 3,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.25
+        }).addTo(ruleMap);
+        ruleMap.fitBounds(rulePolygonLayer.getBounds(), { padding: [20, 20] });
+        if (badge) {
+          badge.textContent = '📍 ' + rulePoints.length + ' نقطه مرزبندی فعال';
+          badge.className = 'badge badge-live';
+        }
+        if (textarea) textarea.value = JSON.stringify(rulePoints);
+      } else if (rulePoints.length > 0) {
+        rulePolygonLayer = L.polyline(rulePoints, { color: '#ea580c', weight: 2, dashArray: '5, 5' }).addTo(ruleMap);
+        if (badge) {
+          badge.textContent = rulePoints.length + ' نقطه تعیین شده (حداقل ۳ رأس نیاز است)';
+          badge.className = 'badge badge-warn';
+        }
+        if (textarea) textarea.value = JSON.stringify(rulePoints);
+      } else {
+        if (badge) {
+          badge.textContent = 'بدون مرزبندی (کل شهر)';
+          badge.className = 'badge badge-muted';
+        }
+        if (textarea) textarea.value = '';
+      }
+    }
+
+    function clearRulePolygon() {
+      rulePoints = [];
+      updatePolygonDisplay();
+    }
+
+    function centerMapOnAliabad() {
+      if (ruleMap) ruleMap.setView([36.9025, 54.8558], 13);
+    }
+
     function openCreateRuleModal() {
       document.getElementById('rule-dialog-title').textContent = 'تعریف فیلتر دو مرحله‌ای دیوار';
       document.getElementById('r-edit-id').value = '';
       document.getElementById('r-name').value = '';
-      document.getElementById('r-channel').value = '';
-      document.getElementById('r-districts').value = '82';
-      document.getElementById('r-max-budget').value = '12000000000';
+      document.getElementById('r-channel').value = '@aliabadmelk';
+      document.getElementById('r-city-id').value = '823';
+      document.getElementById('r-max-budget').value = '10000000000';
       document.getElementById('r-max-rent').value = '0';
-      document.getElementById('r-min-area').value = '90';
-      document.getElementById('r-max-area').value = '140';
+      document.getElementById('r-min-area').value = '75';
+      document.getElementById('r-max-area').value = '250';
       document.getElementById('r-tolerance').value = '0.15';
       document.getElementById('r-min-score').value = '65';
-      document.getElementById('r-backfill').value = '30';
-      document.getElementById('group-backfill').style.display = 'flex';
+      document.getElementById('r-max-age').value = '24';
+      document.getElementById('r-exclude-agency').checked = true;
+      document.getElementById('r-negative-words').value = 'املاک, مشاور, مشاورین, بنگاه, دپارتمان, دفتر املاک, همکار, همکاران, کمیسیون, آژانس املاک, کارگزاری';
       document.getElementById('r-parking').checked = true;
       document.getElementById('r-elevator').checked = true;
       document.getElementById('r-storage').checked = true;
       document.getElementById('r-balcony').checked = false;
       document.getElementById('r-skeleton').value = '';
       document.getElementById('r-direction').value = '';
-      document.getElementById('btn-save-rule').textContent = '🚀 ذخیره فیلتر و شروع Backfill';
+      document.getElementById('btn-save-rule').textContent = '🚀 ذخیره فیلتر و شروع پایش';
+
       document.getElementById('rule-dialog').showModal();
+      initRuleMap([]);
     }
 
     function openEditRuleModal(ruleId) {
@@ -593,23 +729,30 @@
       document.getElementById('r-channel').value = r.chat_id || r.channel_id || '';
       document.getElementById('r-channel').readOnly = true;
 
-      // Select category
       const selectCat = document.getElementById('r-category');
       const targetVal = `${r.divar_category_slug}|${r.deal_type}|${r.property_type}`;
       for (let i = 0; i < selectCat.options.length; i++) {
         if (selectCat.options[i].value === targetVal) selectCat.selectedIndex = i;
       }
 
-      let districts = [];
-      try { districts = JSON.parse(r.districts_json || '[]'); } catch(_) {}
-      document.getElementById('r-districts').value = districts.join(',');
+      let cityIds = ['823'];
+      try { cityIds = JSON.parse(r.city_ids_json || '["823"]'); } catch(_) {}
+      document.getElementById('r-city-id').value = cityIds.join(',');
+
       document.getElementById('r-max-budget').value = r.max_budget || 0;
       document.getElementById('r-max-rent').value = r.max_rent || 0;
       document.getElementById('r-min-area').value = r.min_area || 0;
       document.getElementById('r-max-area').value = r.max_area || 0;
       document.getElementById('r-tolerance').value = String(r.tolerance_pct || 0.15);
       document.getElementById('r-min-score').value = r.min_match_score || 65;
-      document.getElementById('group-backfill').style.display = 'none';
+      document.getElementById('r-max-age').value = r.max_post_age_hours || 24;
+
+      document.getElementById('r-exclude-agency').checked = r.exclude_agency !== 0;
+      let negWords = [];
+      try { negWords = JSON.parse(r.negative_keywords_json || '[]'); } catch(_) {}
+      document.getElementById('r-negative-words').value = negWords.length > 0
+        ? negWords.join(', ')
+        : 'املاک, مشاور, مشاورین, بنگاه, دپارتمان, دفتر املاک, همکار, همکاران, کمیسیون, آژانس املاک, کارگزاری';
 
       let stage2 = {};
       try { stage2 = JSON.parse(r.stage2_filters_json || '{}'); } catch(_) {}
@@ -620,27 +763,43 @@
       document.getElementById('r-skeleton').value = stage2.skeleton || '';
       document.getElementById('r-direction').value = stage2.direction || '';
 
+      let initialPoints = [];
+      try {
+        const parsed = JSON.parse(r.geo_polygon_json || '[]');
+        if (Array.isArray(parsed)) initialPoints = parsed;
+      } catch(_) {}
+
       document.getElementById('btn-save-rule').textContent = '💾 ذخیره تغییرات';
       document.getElementById('rule-dialog').showModal();
+      initRuleMap(initialPoints);
     }
 
     async function submitRuleForm(e) {
       e.preventDefault();
       const editId = document.getElementById('r-edit-id').value;
       const [slug, dealType, propType] = document.getElementById('r-category').value.split('|');
+      const negativeWordsArray = document.getElementById('r-negative-words').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
       const payload = {
         name: document.getElementById('r-name').value.trim(),
         channel_chat_id: document.getElementById('r-channel').value.trim(),
         divar_category_slug: slug,
         deal_type: dealType,
         property_type: propType,
-        districts: document.getElementById('r-districts').value.split(',').map(s => s.trim()).filter(Boolean),
+        city_ids: document.getElementById('r-city-id').value.split(',').map(s => s.trim()).filter(Boolean),
         max_budget: Number(document.getElementById('r-max-budget').value),
         max_rent: Number(document.getElementById('r-max-rent').value),
         min_area: Number(document.getElementById('r-min-area').value),
         max_area: Number(document.getElementById('r-max-area').value),
         tolerance_pct: Number(document.getElementById('r-tolerance').value),
         min_match_score: Number(document.getElementById('r-min-score').value),
+        max_post_age_hours: Number(document.getElementById('r-max-age').value) || 24,
+        exclude_agency: document.getElementById('r-exclude-agency').checked ? 1 : 0,
+        negative_keywords: negativeWordsArray,
+        geo_polygon_json: rulePoints.length >= 3 ? JSON.stringify(rulePoints) : null,
         stage2_filters: {
           parking: document.getElementById('r-parking').checked,
           elevator: document.getElementById('r-elevator').checked,
@@ -656,9 +815,9 @@
           await apiCall('/api/admin/rules/' + editId, { method: 'PUT', body: JSON.stringify(payload) });
           notify('✅ فیلتر با موفقیت ویرایش شد.');
         } else {
-          payload.backfill_target_count = Number(document.getElementById('r-backfill').value);
+          payload.backfill_target_count = 30;
           await apiCall('/api/admin/rules', { method: 'POST', body: JSON.stringify(payload) });
-          notify('🚀 فیلتر جدید ثبت شد و فاز Backfill آغاز گردید.');
+          notify('🚀 فیلتر جدید ثبت شد و فاز پایش آغاز گردید.');
         }
         document.getElementById('rule-dialog').close();
         await fetchCurrentTabData();
@@ -736,7 +895,7 @@
             <div>
               <h3 style="margin:0;">📢 کانال‌های متصل تلگرام (@channel)</h3>
               <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
-                کانال‌هایی که فیلترهای ملکی می‌توانند آگهی‌های منطبق را در آن‌ها منتشر کنند.
+                کانال‌هایی که فیلترهای ملکی آگهی‌های منطبق را در آن‌ها با قالب حرفه‌ای امیران منتشر می‌کنند.
               </p>
             </div>
             <button class="btn" onclick="document.getElementById('channel-dialog').showModal()">➕ اتصال کانال جدید</button>
@@ -789,7 +948,7 @@
     }
 
     async function deleteChannel(chId) {
-      if (!confirm('آیا از حذف این کانال اطمینان دارید؟ فیلترهای مرتبط نیز ممکن است تحت تأثیر قرار گیرند.')) return;
+      if (!confirm('آیا از حذف این کانال اطمینان دارید؟ فیلترهای مرتبط نیز ممکن است غیرفعال شوند.')) return;
       try {
         await apiCall('/api/admin/channels/' + chId, { method: 'DELETE' });
         notify('🗑 کانال با موفقیت حذف شد.');
@@ -838,7 +997,7 @@
             <div>
               <h3 style="margin:0;">💎 مدیریت کاربران، نقش‌ها و اشتراک‌ها</h3>
               <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
-                امکان فعال‌سازی دستی پلن‌های ویژه مشاورین، تعیین نقش ادمین و مدیریت محدودیت‌های دسترسی کاربران.
+                اعطای دستی اشتراک به مشاورین، تعیین دسترسی ادمین و مدیریت مسدودیت.
               </p>
             </div>
             <button class="btn" onclick="openGrantSubModal('', 'USER')">➕ اعطای اشتراک دستی به کاربر جدید</button>
@@ -904,41 +1063,37 @@
     function renderSimulatorTab(container) {
       container.innerHTML = `
         <div class="card">
-          <h3 style="margin:0 0 0.5rem 0;">🧪 شبیه‌ساز زنده ارزیابی آگهی دیوار و پیش‌نمایش Card View</h3>
+          <h3 style="margin:0 0 0.5rem 0;">🧪 شبیه‌ساز زنده ارزیابی آگهی دیوار و پیش‌نمایش قالب جدید کانال</h3>
           <p style="font-size:0.85rem; color:var(--muted); margin:0 0 1rem 0;">
-            توکن هر آگهی در دیوار را وارد کرده و معیارهای فیلتر خود را تنظیم کنید تا موتور تطابق هوشمند و فرمت کارت خروجی تلگرام را به صورت زنده مشاهده نمایید.
+            توکن هر آگهی در دیوار را وارد کرده و نحوه اعمال فیلتر مرزبندی نقشه، فیلتر حذف مشاورین املاک و فرمت نهایی پیام کانال را بررسی نمایید.
           </p>
 
           <div class="form-grid">
             <div class="form-group">
               <label>توکن آگهی دیوار یا آدرس کامل آن:</label>
-              <input type="text" id="sim-token" placeholder="مثال: gZ82XXXX یا https://divar.ir/v/..." value="gZ" />
+              <input type="text" id="sim-token" placeholder="مثال: gap-CaAd یا https://divar.ir/v/..." value="" />
             </div>
             <div class="form-group">
-              <label>نوع معامله:</label>
+              <label>نوع معامله برای تست:</label>
               <select id="sim-deal-type">
-                <option value="BUY">خرید و فروش (BUY)</option>
+                <option value="BUY">فروش مسکونی / تجاری (BUY)</option>
                 <option value="RENT">رهن و اجاره (RENT)</option>
               </select>
             </div>
             <div class="form-group">
               <label>حداکثر بودجه خرید / رهن (تومان):</label>
-              <input type="number" id="sim-max-budget" value="12000000000" />
+              <input type="number" id="sim-max-budget" value="10000000000" />
             </div>
             <div class="form-group">
               <label>بازه متراژ (حداقل - حداکثر):</label>
               <div style="display:flex; gap:0.35rem;">
-                <input type="number" id="sim-min-area" value="85" style="width:50%" />
-                <input type="number" id="sim-max-area" value="140" style="width:50%" />
+                <input type="number" id="sim-min-area" value="70" style="width:50%" />
+                <input type="number" id="sim-max-area" value="250" style="width:50%" />
               </div>
             </div>
             <div class="form-group">
-              <label>درصد تلورانس مالی و متراژ:</label>
-              <select id="sim-tolerance">
-                <option value="0.10">۱۰٪ تلورانس</option>
-                <option value="0.12">۱۲٪ تلورانس</option>
-                <option value="0.15" selected>۱۵٪ تلورانس (استاندارد)</option>
-              </select>
+              <label>حداکثر سن آگهی در دیوار (ساعت گذشته):</label>
+              <input type="number" id="sim-max-age" value="24" />
             </div>
             <div class="form-group">
               <label>حداقل امتیاز قبولی تطابق (Match Score %):</label>
@@ -946,17 +1101,14 @@
             </div>
           </div>
 
-          <div style="background:#f8fafc; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid var(--border);">
-            <strong style="font-size:0.85rem;">الزامات مرحله دوم (Stage 2):</strong>
-            <div style="display:flex; gap:1.25rem; flex-wrap:wrap; margin-top:0.4rem;">
-              <label><input type="checkbox" id="sim-parking" checked /> پارکینگ</label>
-              <label><input type="checkbox" id="sim-elevator" checked /> آسانسور</label>
-              <label><input type="checkbox" id="sim-storage" checked /> انباری</label>
-              <label><input type="checkbox" id="sim-balcony" /> بالکن</label>
-            </div>
+          <div style="background:#fef2f2; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #fecaca;">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; font-weight:600; color:#991b1b; cursor:pointer;">
+              <input type="checkbox" id="sim-exclude-agency" checked />
+              فعال‌سازی فیلتر حذف آگهی‌های املاک، مشاور و دلال (عدم تایید در صورت وجود کلمات ممنوعه)
+            </label>
           </div>
 
-          <button class="btn" style="padding:0.6rem 1.25rem;" onclick="runSimulation()">🔍 محاسبه درصد تطابق و پیش‌نمایش خروجی</button>
+          <button class="btn" style="padding:0.6rem 1.25rem;" onclick="runSimulation()">🔍 آنالیز زنده آگهی دیوار و پیش‌نمایش خروجی تلگرام</button>
         </div>
 
         <div id="sim-results" style="display:none;" class="card">
@@ -986,7 +1138,7 @@
             </div>
           </div>
 
-          <h4 style="margin:0 0 0.5rem 0;">📱 پیش‌نمایش دقیق پست تلگرام (Card View):</h4>
+          <h4 style="margin:0 0 0.5rem 0;">📱 پیش‌نمایش دقیق پست ارسالی به کانال تلگرام (Card View):</h4>
           <div id="sim-telegram-card" class="telegram-card-preview"></div>
           <div id="sim-telegram-link" style="margin-top:0.5rem;"></div>
         </div>
@@ -996,10 +1148,9 @@
     async function runSimulation() {
       let rawToken = document.getElementById('sim-token').value.trim();
       if (!rawToken) {
-        notify('لطفاً توکن یا آدرس آگهی در دیوار را وارد کنید.');
+        notify('لطفاً توکن یا آدرس یک آگهی در دیوار را وارد کنید.');
         return;
       }
-      // If full url, extract token: https://divar.ir/v/.../gZ1234
       const urlMatch = rawToken.match(/\/v\/[^\/]+\/([^\/\?#]+)/) || rawToken.match(/\/v\/([^\/\?#]+)/);
       if (urlMatch) rawToken = urlMatch[1];
 
@@ -1009,14 +1160,10 @@
         max_budget: Number(document.getElementById('sim-max-budget').value),
         min_area: Number(document.getElementById('sim-min-area').value),
         max_area: Number(document.getElementById('sim-max-area').value),
-        tolerance_pct: Number(document.getElementById('sim-tolerance').value),
+        tolerance_pct: 0.15,
         min_match_score: Number(document.getElementById('sim-min-score').value),
-        stage2_filters: {
-          parking: document.getElementById('sim-parking').checked,
-          elevator: document.getElementById('sim-elevator').checked,
-          storage: document.getElementById('sim-storage').checked,
-          balcony: document.getElementById('sim-balcony').checked
-        }
+        max_post_age_hours: Number(document.getElementById('sim-max-age').value) || 24,
+        exclude_agency: document.getElementById('sim-exclude-agency').checked ? 1 : 0
       };
 
       try {
@@ -1026,12 +1173,12 @@
         document.getElementById('sim-results').style.display = 'block';
         const match = res.matchResult;
         const scoreBox = document.getElementById('sim-score-box');
-        scoreBox.textContent = match.matchScore + '٪';
-        scoreBox.className = 'score-box ' + (match.isMatch ? 'pass' : 'fail');
+        scoreBox.textContent = match.score + '٪';
+        scoreBox.className = 'score-box ' + (match.eligible ? 'pass' : 'fail');
 
         document.getElementById('sim-title').textContent = res.ad.title || 'آگهی دیوار';
         const statusEl = document.getElementById('sim-status-text');
-        if (match.isMatch) {
+        if (match.eligible) {
           statusEl.textContent = '✅ واجد شرایط ارسال به کانال (تطابق کامل)';
           statusEl.style.color = 'var(--success)';
         } else {
@@ -1039,11 +1186,20 @@
           statusEl.style.color = 'var(--danger)';
         }
 
-        document.getElementById('sim-score-budget').textContent = (match.breakdown?.budgetScore || 0) + ' / 40';
-        document.getElementById('sim-score-area').textContent = (match.breakdown?.areaScore || 0) + ' / 30';
-        document.getElementById('sim-score-specs').textContent = (match.breakdown?.specsScore || 0) + ' / 30';
+        document.getElementById('sim-score-budget').textContent = (match.budgetScore || 0) + ' / 35';
+        document.getElementById('sim-score-area').textContent = (match.areaScore || 0) + ' / 25';
+        document.getElementById('sim-score-specs').textContent = (match.specsScore || 0) + ' / 40';
 
-        document.getElementById('sim-telegram-card').textContent = res.cardPreview.text;
+        document.getElementById('sim-telegram-card').innerHTML = res.cardPreview.text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/&lt;b&gt;/g, '<b>')
+          .replace(/&lt;\/b&gt;/g, '</b>')
+          .replace(/&lt;i&gt;/g, '<i>')
+          .replace(/&lt;\/i&gt;/g, '</i>')
+          .replace(/&lt;code&gt;/g, '<code>')
+          .replace(/&lt;\/code&gt;/g, '</code>');
         
         const btnUrl = res.cardPreview.reply_markup?.inline_keyboard?.[0]?.[0]?.url || ('https://divar.ir/v/' + rawToken);
         document.getElementById('sim-telegram-link').innerHTML = `

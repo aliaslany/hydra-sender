@@ -47,6 +47,10 @@ export interface FilterRule {
   tolerance_pct: number;
   min_match_score: number;
   stage2_filters_json: string;
+  geo_polygon_json?: string;
+  exclude_agency?: number;
+  max_post_age_hours?: number;
+  negative_keywords_json?: string;
 }
 
 export interface ParsedDivarAd {
@@ -56,20 +60,35 @@ export interface ParsedDivarAd {
   cityPersian: string;
   districtPersian: string;
   dealType: 'BUY' | 'RENT';
+  propertyTypeFa?: string;
   totalPrice: number;
   pricePerM2: number;
   credit: number;
   rent: number;
   isConvertible: boolean;
   area: number;
+  landArea?: number | null;
   bedrooms: number | null;
   buildYear: number | null;
   floorNumber: number | null;
   floorText: string;
+  unitsPerFloor?: string | null;
   primaryPhotoUrl: string | null;
   latitude: number | null;
   longitude: number | null;
   postTimestamp: number;
+  businessType?: 'personal' | 'real_estate';
+  evacuationStatus?: string;
+  maxTenants?: string;
+  entrance?: string;
+  yard?: string;
+  closet?: string;
+  flooring?: string;
+  security?: string;
+  utilities?: string;
+  deedStatus?: string;
+  buildingFacade?: string;
+  loanStatus?: string;
   specs: {
     parking?: boolean;
     elevator?: boolean;

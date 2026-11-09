@@ -87,6 +87,10 @@ const INIT_STATEMENTS = [
     tolerance_pct REAL NOT NULL DEFAULT 0.15 CHECK(tolerance_pct BETWEEN 0.0 AND 0.25),
     min_match_score INTEGER NOT NULL DEFAULT 65 CHECK(min_match_score BETWEEN 0 AND 100),
     stage2_filters_json TEXT NOT NULL DEFAULT '{}',
+    geo_polygon_json TEXT,
+    exclude_agency INTEGER NOT NULL DEFAULT 1,
+    max_post_age_hours INTEGER NOT NULL DEFAULT 24,
+    negative_keywords_json TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
@@ -171,6 +175,19 @@ async function ensureSchema(db: D1Database): Promise<void> {
       console.error('Schema statement error:', err, 'in statement:', stmt);
     }
   }
+
+  const migrations = [
+    'ALTER TABLE filter_rules ADD COLUMN geo_polygon_json TEXT',
+    'ALTER TABLE filter_rules ADD COLUMN exclude_agency INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN max_post_age_hours INTEGER NOT NULL DEFAULT 24',
+    'ALTER TABLE filter_rules ADD COLUMN negative_keywords_json TEXT'
+  ];
+  for (const mig of migrations) {
+    try {
+      await db.prepare(mig).run();
+    } catch (_) {}
+  }
+
   schemaBootstrapped = true;
 }
 

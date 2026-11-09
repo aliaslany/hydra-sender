@@ -104,14 +104,15 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           id, channel_id, owner_user_id, name, is_active,
           city_ids_json, districts_json, deal_type, property_type, divar_category_slug,
           min_budget, max_budget, min_rent, max_rent, min_area, max_area,
-          tolerance_pct, min_match_score, stage2_filters_json
-        ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          tolerance_pct, min_match_score, stage2_filters_json,
+          geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json
+        ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         ruleId,
         channelId,
         ownerId,
         body.name || 'فیلتر جدید',
-        JSON.stringify(body.city_ids || ['1']),
+        JSON.stringify(body.city_ids || ['823']),
         JSON.stringify(body.districts || []),
         body.deal_type || 'BUY',
         body.property_type || 'APARTMENT',
@@ -124,7 +125,11 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         Number(body.max_area) || 0,
         Number(body.tolerance_pct) || 0.15,
         Number(body.min_match_score) || 65,
-        JSON.stringify(body.stage2_filters || {})
+        JSON.stringify(body.stage2_filters || {}),
+        body.geo_polygon_json || null,
+        body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
+        Number(body.max_post_age_hours) || 24,
+        body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
       ),
       env.DB.prepare(
         `INSERT INTO sync_state (rule_id, phase, backfill_target_count) VALUES (?, 'BACKFILL', ?)`
@@ -156,6 +161,10 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         tolerance_pct = ?,
         min_match_score = ?,
         stage2_filters_json = ?,
+        geo_polygon_json = ?,
+        exclude_agency = ?,
+        max_post_age_hours = ?,
+        negative_keywords_json = ?,
         updated_at = unixepoch()
       WHERE id = ?`
     ).bind(
@@ -163,7 +172,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       body.divar_category_slug || 'apartment-sell',
       body.deal_type || 'BUY',
       body.property_type || 'APARTMENT',
-      JSON.stringify(body.city_ids || ['1']),
+      JSON.stringify(body.city_ids || ['823']),
       JSON.stringify(body.districts || []),
       Number(body.min_budget) || 0,
       Number(body.max_budget) || 0,
@@ -174,6 +183,10 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       Number(body.tolerance_pct) || 0.15,
       Number(body.min_match_score) || 65,
       JSON.stringify(body.stage2_filters || {}),
+      body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : null,
+      body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
+      Number(body.max_post_age_hours) || 24,
+      body.negative_keywords ? JSON.stringify(body.negative_keywords) : null,
       ruleId
     ).run();
 
@@ -333,7 +346,11 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       max_area: Number(body.max_area) || 140,
       tolerance_pct: Number(body.tolerance_pct) || 0.15,
       min_match_score: Number(body.min_match_score) || 65,
-      stage2_filters_json: JSON.stringify(body.stage2_filters || { parking: true, elevator: true, storage: true })
+      stage2_filters_json: JSON.stringify(body.stage2_filters || { parking: true, elevator: true, storage: true }),
+      geo_polygon_json: body.geo_polygon_json || null,
+      exclude_agency: body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
+      max_post_age_hours: Number(body.max_post_age_hours) || 24,
+      negative_keywords_json: body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
     };
 
     const ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);

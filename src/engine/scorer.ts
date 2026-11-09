@@ -1,4 +1,5 @@
 import { FilterRule, MatchResult, ParsedDivarAd, Stage2Filters } from '../types';
+import { isPointInPolygon, parsePolygonJson } from './geo';
 
 const PERSIAN_ARABIC_DIGITS: Record<string, string> = {
   '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
@@ -36,7 +37,7 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   }
 
   // 2. Building Direction (جهت ساختمان)
-  if (/(دو\s*کله|شمالی\s*و?\s*جنوبی)/.test(norm)) {
+  if (/(دو\s*کله|دو\s*نبش|شمالی\s*و?\s*جنوبی)/.test(norm)) {
     extracted.direction = 'DUAL';
   } else if (/\bشمالی\b/.test(norm)) {
     extracted.direction = 'NORTH';
@@ -93,15 +94,176 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   return extracted;
 }
 
+export function parseExtendedAttributesNLP(description: string, title: string, categorySlug?: string): Partial<ParsedDivarAd> {
+  const norm = normalizePersianText(`${title} ${description}`);
+  const attrs: Partial<ParsedDivarAd> = {};
+
+  // 1. Property Type
+  if (/(مغازه|تجاری|خدماتی|دفتر\s*کار)/.test(norm) || (categorySlug && categorySlug.includes('commercial'))) {
+    attrs.propertyTypeFa = /مغازه/.test(norm) ? 'مغازه' : 'تجاری خدماتی';
+  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس)/.test(norm) || (categorySlug && categorySlug.includes('villa'))) {
+    attrs.propertyTypeFa = 'ویلایی';
+  } else if (/(زمین|کلنگی|مستغلات|چهاردیواری)/.test(norm) || (categorySlug && categorySlug.includes('land'))) {
+    attrs.propertyTypeFa = 'زمین کلنگی';
+  } else {
+    attrs.propertyTypeFa = 'آپارتمان مسکونی';
+  }
+
+  // 2. Units Per Floor
+  if (/تک\s*واحدی/.test(norm)) attrs.unitsPerFloor = 'تک واحدی';
+  else if (/۲\s*واحدی|دو\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۲ واحدی';
+  else if (/۳\s*واحدی|سه\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۳ واحدی';
+  else if (/۴\s*واحدی|چهار\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۴ واحدی';
+
+  // 3. Deed Status (وضعیت سند)
+  if (/تک\s*برگ/.test(norm)) attrs.deedStatus = 'تک‌برگ';
+  else if (/شش\s*دانگ/.test(norm)) attrs.deedStatus = 'شش‌دانگ';
+  else if (/قولنامه/.test(norm)) attrs.deedStatus = 'قولنامه‌ای با کد رهگیری';
+  else if (/وکالتی/.test(norm)) attrs.deedStatus = 'وکالتی محضری';
+
+  // 4. Facade (نوع نما)
+  if (/نما\s*رومی/.test(norm)) attrs.buildingFacade = 'سنگ رومی کلاسیک';
+  else if (/نما\s*سنگ|سنگ\s*تراورتن/.test(norm)) attrs.buildingFacade = 'سنگ تراورتن';
+  else if (/کامپوزیت/.test(norm)) attrs.buildingFacade = 'کامپوزیت مدرن';
+  else if (/آجر\s*نما/.test(norm)) attrs.buildingFacade = 'آجر نسوز مدرن';
+
+  // 5. Flooring (کف‌پوش)
+  if (/پارکت|لمینت/.test(norm)) attrs.flooring = 'پارکت / لمینت';
+  else if (/سرامیک/.test(norm)) attrs.flooring = 'سرامیک درجه یک';
+  else if (/سنگ/.test(norm)) attrs.flooring = 'سنگ مرمر';
+  else if (/موزائیک/.test(norm)) attrs.flooring = 'موزائیک';
+
+  // 6. Evacuation Status (وضعیت تخلیه)
+  if (/تخلیه\s*فوری|آماده\s*تحویل/.test(norm)) attrs.evacuationStatus = 'تخلیه فوری';
+  else if (/در\s*دست\s*مستاجر|مستاجر\s*دارد/.test(norm)) attrs.evacuationStatus = 'در دست مستاجر (موعد مشخص)';
+  else if (/تخلیه/.test(norm)) attrs.evacuationStatus = 'تخلیه شده';
+
+  // 7. Entrance / Yard
+  if (/درب\s*مجزا|راه\s*جدا|ورودی\s*مستقل/.test(norm)) attrs.entrance = 'مجزا و اختصاصی';
+  if (/حیاط\s*مستقل|حیاط\s*اختصاصی/.test(norm)) attrs.yard = 'دارد (مستقل)';
+  else if (/حیاط/.test(norm)) attrs.yard = 'دارد (مشاع)';
+
+  // 8. Closet
+  if (/کمد\s*دیواری/.test(norm)) attrs.closet = 'دارد (تمام اتاق‌ها)';
+
+  // 9. Loan Status
+  if (/دارای\s*وام|وام\s*دارد|وام\s*مسکن/.test(norm)) attrs.loanStatus = 'دارد (قابلیت انتقال)';
+  else if (/بدون\s*وام|تسویه/.test(norm)) attrs.loanStatus = 'بدون وام (آماده انتقال قطعی)';
+  else if (/قابلیت\s*دریافت\s*وام|امکان\s*وام/.test(norm)) attrs.loanStatus = 'قابلیت دریافت حداکثر وام مسکن';
+
+  return attrs;
+}
+
 export function computeEquivalentRahn(creditToman: number, rentToman: number): number {
   return Math.round(creditToman + rentToman / 0.03);
 }
 
 export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResult {
-  const T = Math.min(Math.max(rule.tolerance_pct || 0.15, 0.0), 0.25);
   const reasons: string[] = [];
 
+  // ==========================================
+  // Check 1: Exclude Real Estate Agency / Broker Ads
+  // ==========================================
+  if (rule.exclude_agency !== 0) {
+    const normTitle = normalizePersianText(ad.title);
+    const normDesc = normalizePersianText(ad.description);
+    const combined = `${normTitle} ${normDesc}`;
+
+    let negativeWords = [
+      'املاک',
+      'مشاور',
+      'مشاورین',
+      'مشاوران',
+      'بنگاه',
+      'دپارتمان',
+      'دفتر املاک',
+      'همکار',
+      'همکاران',
+      'کمیسیون',
+      'آژانس املاک',
+      'کارگزاری'
+    ];
+
+    try {
+      if (rule.negative_keywords_json) {
+        const customWords = JSON.parse(rule.negative_keywords_json);
+        if (Array.isArray(customWords) && customWords.length > 0) {
+          negativeWords = customWords;
+        }
+      }
+    } catch {}
+
+    const matchedWord = negativeWords.find((w) => {
+      const clean = normalizePersianText(w).trim();
+      if (!clean) return false;
+      return combined.includes(clean);
+    });
+
+    if (matchedWord || ad.businessType === 'real_estate') {
+      return {
+        eligible: false,
+        score: 0,
+        budgetScore: 0,
+        areaScore: 0,
+        specsScore: 0,
+        budgetDeviationPct: 0,
+        areaDeviationPct: 0,
+        reasons: [`شناسایی به عنوان آگهی مشاور/املاک (کلمه: ${matchedWord || 'نوع کسب‌وکار'})`]
+      };
+    }
+  }
+
+  // ==========================================
+  // Check 2: Geo-Fencing / Polygon Boundary Filter
+  // ==========================================
+  if (rule.geo_polygon_json) {
+    const polygon = parsePolygonJson(rule.geo_polygon_json);
+    if (polygon.length >= 3) {
+      if (ad.latitude !== null && ad.longitude !== null) {
+        const inside = isPointInPolygon([ad.latitude, ad.longitude], polygon);
+        if (!inside) {
+          return {
+            eligible: false,
+            score: 0,
+            budgetScore: 0,
+            areaScore: 0,
+            specsScore: 0,
+            budgetDeviationPct: 0,
+            areaDeviationPct: 0,
+            reasons: ['موقعیت ملک خارج از محدوده خط‌کشی‌شده نقشه است']
+          };
+        }
+      }
+      // If ad has no latitude/longitude coordinates on Divar, it is preserved based on city/district
+    }
+  }
+
+  // ==========================================
+  // Check 3: Max Post Age (e.g. 24 hours / 1 day)
+  // ==========================================
+  const maxAgeHours = Number(rule.max_post_age_hours) || 24;
+  if (maxAgeHours > 0 && ad.postTimestamp > 0) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ageSeconds = nowSec - ad.postTimestamp;
+    if (ageSeconds > maxAgeHours * 3600) {
+      return {
+        eligible: false,
+        score: 0,
+        budgetScore: 0,
+        areaScore: 0,
+        specsScore: 0,
+        budgetDeviationPct: 0,
+        areaDeviationPct: 0,
+        reasons: [`آگهی قدیمی‌تر از سقف مجاز (${maxAgeHours} ساعت گذشته) است`]
+      };
+    }
+  }
+
+  const T = Math.min(Math.max(rule.tolerance_pct || 0.15, 0.0), 0.25);
+
+  // ==========================================
   // 1. Evaluate Budget (35 points max)
+  // ==========================================
   let effectivePrice = ad.dealType === 'BUY' ? ad.totalPrice : ad.credit;
   let effectiveMaxBudget = rule.max_budget || 0;
   let effectiveMinBudget = rule.min_budget || 0;
@@ -113,8 +275,14 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
 
   if (ad.dealType === 'BUY' && rule.max_price_per_m2 > 0 && ad.pricePerM2 > rule.max_price_per_m2 * (1 + T)) {
     return {
-      eligible: false, score: 0, budgetScore: 0, areaScore: 0, specsScore: 0,
-      budgetDeviationPct: 1, areaDeviationPct: 0, reasons: ['قیمت هر متر مربع خارج از سقف مجاز + تلورانس است']
+      eligible: false,
+      score: 0,
+      budgetScore: 0,
+      areaScore: 0,
+      specsScore: 0,
+      budgetDeviationPct: 1,
+      areaDeviationPct: 0,
+      reasons: ['قیمت هر متر مربع خارج از سقف مجاز + تلورانس است']
     };
   }
 
@@ -127,9 +295,14 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
 
     if (effectivePrice > hardCeiling || (effectiveMinBudget > 0 && effectivePrice < hardFloor)) {
       return {
-        eligible: false, score: 0, budgetScore: 0, areaScore: 0, specsScore: 0,
+        eligible: false,
+        score: 0,
+        budgetScore: 0,
+        areaScore: 0,
+        specsScore: 0,
         budgetDeviationPct: (effectivePrice - effectiveMaxBudget) / effectiveMaxBudget,
-        areaDeviationPct: 0, reasons: ['بودجه خارج از بازه تلورانس است']
+        areaDeviationPct: 0,
+        reasons: ['بودجه خارج از بازه تلورانس است']
       };
     }
 
@@ -145,7 +318,9 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
     }
   }
 
+  // ==========================================
   // 2. Evaluate Area (25 points max)
+  // ==========================================
   let areaScore = 25.0;
   let areaDeviationPct = 0;
   if (ad.area > 0 && (rule.min_area > 0 || rule.max_area > 0)) {
@@ -156,8 +331,13 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
 
     if (ad.area < hardMinArea || ad.area > hardMaxArea) {
       return {
-        eligible: false, score: 0, budgetScore, areaScore: 0, specsScore: 0,
-        budgetDeviationPct, areaDeviationPct: minArea > 0 ? (ad.area - minArea) / minArea : 0,
+        eligible: false,
+        score: 0,
+        budgetScore,
+        areaScore: 0,
+        specsScore: 0,
+        budgetDeviationPct,
+        areaDeviationPct: minArea > 0 ? (ad.area - minArea) / minArea : 0,
         reasons: ['متراژ خارج از بازه تلورانس است']
       };
     }
@@ -174,7 +354,9 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
     }
   }
 
+  // ==========================================
   // 3. Evaluate Stage 2 Specifications (40 points max)
+  // ==========================================
   let s2: Stage2Filters = {};
   try {
     s2 = JSON.parse(rule.stage2_filters_json || '{}');

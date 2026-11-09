@@ -1,5 +1,5 @@
 import { Env, FilterRule, ParsedDivarAd } from '../types';
-import { extractIntFromPersian, normalizePersianText, parseDescriptionNLP } from '../engine/scorer';
+import { extractIntFromPersian, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
 
 const DIVAR_HEADERS = {
   'Content-Type': 'application/json',
@@ -21,16 +21,26 @@ export async function searchDivarPostList(
   pagination?: { lastPostDate: string; page: number; searchUid?: string }
 ): Promise<DivarSearchResponse> {
   const T = Math.min(Math.max(rule.tolerance_pct || 0.15, 0.0), 0.25);
-  let cityIds: string[] = ['1'];
+  let cityIds: string[] = ['823']; // Default to Aliabad Katul (823) or custom
   let districts: string[] = [];
 
-  try { cityIds = JSON.parse(rule.city_ids_json || '["1"]'); } catch {}
-  try { districts = JSON.parse(rule.districts_json || '[]'); } catch {}
+  try {
+    const parsed = JSON.parse(rule.city_ids_json || '["823"]');
+    if (Array.isArray(parsed) && parsed.length > 0) cityIds = parsed;
+  } catch {}
+  try {
+    districts = JSON.parse(rule.districts_json || '[]');
+  } catch {}
 
   const formData: Record<string, any> = {
     category: { str: { value: rule.divar_category_slug || 'apartment-sell' } },
     sort: { str: { value: 'sort_date' } }
   };
+
+  // Exclude real estate agency ads at Divar query level if requested
+  if (rule.exclude_agency !== 0) {
+    formData.business_type = { repeated_string: { value: ['personal'] } };
+  }
 
   if (districts.length > 0) {
     formData.districts = { repeated_string: { value: districts } };
@@ -122,7 +132,7 @@ export async function fetchDivarPostDetail(
   const sections: any[] = raw?.sections || [];
   let title = raw?.share?.title || raw?.seo?.title || 'آگهی ملک';
   let description = raw?.share?.description || '';
-  const cityPersian = raw?.web_info?.city_persian || 'تهران';
+  const cityPersian = raw?.web_info?.city_persian || 'علی‌آباد کتول';
   const districtPersian = raw?.web_info?.district_persian || '';
   let totalPrice = 0;
   let pricePerM2 = 0;
@@ -137,6 +147,21 @@ export async function fetchDivarPostDetail(
   let primaryPhotoUrl: string | null = null;
   let latitude: number | null = null;
   let longitude: number | null = null;
+
+  const rawBusinessType = raw?.web_info?.business_type || raw?.web_info?.contact_type || '';
+  const businessType: 'personal' | 'real_estate' =
+    String(rawBusinessType).includes('business') || String(rawBusinessType).includes('real-estate')
+      ? 'real_estate'
+      : 'personal';
+
+  let postTimestamp = Math.floor(Date.now() / 1000);
+  const sortDateRaw = raw?.data?.action_log?.server_side_info?.info?.sort_date || raw?.web_info?.created_at;
+  if (sortDateRaw) {
+    const parsedTime = Date.parse(sortDateRaw);
+    if (!isNaN(parsedTime)) {
+      postTimestamp = Math.floor(parsedTime / 1000);
+    }
+  }
 
   const widgetSpecs: ParsedDivarAd['specs'] = {};
 
@@ -156,8 +181,14 @@ export async function fetchDivarPostDetail(
           primaryPhotoUrl = items[0]?.image?.url || items[0]?.image_url || null;
         }
       } else if (wType === 'MAP_ROW') {
-        latitude = wData?.location?.exact_data?.point?.latitude || wData?.location?.fuzzy_data?.point?.latitude || null;
-        longitude = wData?.location?.exact_data?.point?.longitude || wData?.location?.fuzzy_data?.point?.longitude || null;
+        latitude =
+          wData?.location?.exact_data?.point?.latitude ||
+          wData?.location?.fuzzy_data?.point?.latitude ||
+          null;
+        longitude =
+          wData?.location?.exact_data?.point?.longitude ||
+          wData?.location?.fuzzy_data?.point?.longitude ||
+          null;
       } else if (wType === 'GROUP_INFO_ROW' || wType === 'GROUP_FEATURE_ROW') {
         const items: any[] = wData.items || [];
         for (const item of items) {
@@ -216,6 +247,8 @@ export async function fetchDivarPostDetail(
 
   // Merge structured KEY_VALUE specs with Persian NLP fallback from description
   const nlpSpecs = parseDescriptionNLP(description);
+  const extendedAttrs = parseExtendedAttributesNLP(description, title, raw?.web_info?.category_slug_persian);
+
   const mergedSpecs: ParsedDivarAd['specs'] = {
     parking: widgetSpecs.parking ?? nlpSpecs.parking,
     elevator: widgetSpecs.elevator ?? nlpSpecs.elevator,
@@ -224,8 +257,8 @@ export async function fetchDivarPostDetail(
     skeleton: widgetSpecs.skeleton ?? nlpSpecs.skeleton,
     direction: widgetSpecs.direction ?? nlpSpecs.direction,
     cabinet: widgetSpecs.cabinet ?? nlpSpecs.cabinet,
-    cooling: (widgetSpecs.cooling && widgetSpecs.cooling.length > 0) ? widgetSpecs.cooling : nlpSpecs.cooling,
-    heating: (widgetSpecs.heating && widgetSpecs.heating.length > 0) ? widgetSpecs.heating : nlpSpecs.heating
+    cooling: widgetSpecs.cooling && widgetSpecs.cooling.length > 0 ? widgetSpecs.cooling : nlpSpecs.cooling,
+    heating: widgetSpecs.heating && widgetSpecs.heating.length > 0 ? widgetSpecs.heating : nlpSpecs.heating
   };
 
   return {
@@ -248,7 +281,9 @@ export async function fetchDivarPostDetail(
     primaryPhotoUrl,
     latitude,
     longitude,
-    postTimestamp: Math.floor(Date.now() / 1000),
-    specs: mergedSpecs
+    postTimestamp,
+    businessType,
+    specs: mergedSpecs,
+    ...extendedAttrs
   };
 }
