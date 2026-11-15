@@ -842,7 +842,7 @@ const htmlContent = `<!DOCTYPE html>
     async function resetRuleBackfill(ruleId) {
       if (!confirm('آیا مطمئنید می‌خواهید آرشیو این فیلتر از ابتدا دوباره خوانده شود؟')) return;
       try {
-        await apiCall('/api/admin/rules/' + ruleId, { method: 'PUT', body: JSON.stringify({ reset_backfill: true }) });
+        await apiCall('/api/admin/rules/' + ruleId + '/reset-backfill', { method: 'POST' });
         notify('🔄 فاز آرشیو با موفقیت ریست شد.');
         await fetchCurrentTabData();
       } catch (err) {
