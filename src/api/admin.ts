@@ -86,20 +86,29 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
 
     if (path === '/api/admin/rules' && request.method === 'POST') {
       const body: any = await request.json();
-      const chatId: string = (body.channel_chat_id || '@somechannel').trim();
-      const channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
-      const ruleId = `rule_${Date.now()}`;
+      const chatId: string = (body.channel_chat_id || body.chat_id || '@aliabadmelk').trim();
       const ownerId = Number(body.owner_user_id) || 1000000;
+      const ruleId = `rule_${Date.now()}`;
+
+      // 1. Ensure user exists
+      await env.DB.prepare(
+        `INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
+      ).bind(ownerId).run();
+
+      // 2. Ensure channel exists and retrieve canonical channel ID
+      let channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const existingCh: any = await env.DB.prepare(`SELECT id FROM channels WHERE chat_id = ?`).bind(chatId).first();
+      if (existingCh) {
+        channelId = existingCh.id;
+        await env.DB.prepare(`UPDATE channels SET is_enabled = 1 WHERE id = ?`).bind(channelId).run();
+      } else {
+        await env.DB.prepare(
+          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
+           VALUES (?, ?, ?, ?, 1, 1, 1)`
+        ).bind(channelId, ownerId, chatId, chatId).run();
+      }
 
       await env.DB.batch([
-        env.DB.prepare(
-          `INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
-        ).bind(ownerId),
-        env.DB.prepare(
-          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
-           VALUES (?, ?, ?, ?, 1, 1, 1)
-           ON CONFLICT(chat_id) DO UPDATE SET is_enabled=1`
-        ).bind(channelId, ownerId, chatId, chatId),
         env.DB.prepare(
           `INSERT INTO filter_rules (
             id, channel_id, owner_user_id, name, is_active,
@@ -134,7 +143,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         ),
         env.DB.prepare(
           `INSERT INTO sync_state (rule_id, phase, backfill_target_count) VALUES (?, 'BACKFILL', ?)`
-        ).bind(ruleId, Number(body.backfill_target_count) ?? 30)
+        ).bind(ruleId, Number(body.backfill_target_count) || 30)
       ]);
 
       return jsonResponse({ ok: true, rule_id: ruleId });
@@ -196,15 +205,32 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         return jsonResponse({ error: 'قانون فیلتر یافت نشد' }, 404);
       }
 
+      let updatedChannelId = existing.channel_id;
+      if (body.channel_chat_id) {
+        const newChatId = body.channel_chat_id.trim();
+        const existingCh: any = await env.DB.prepare(`SELECT id FROM channels WHERE chat_id = ?`).bind(newChatId).first();
+        if (existingCh) {
+          updatedChannelId = existingCh.id;
+          await env.DB.prepare(`UPDATE channels SET is_enabled = 1 WHERE id = ?`).bind(updatedChannelId).run();
+        } else {
+          updatedChannelId = `ch_${newChatId.replace(/[^a-zA-Z0-9]/g, '')}`;
+          await env.DB.prepare(
+            `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
+             VALUES (?, ?, ?, ?, 1, 1, 1) ON CONFLICT(chat_id) DO UPDATE SET is_enabled=1`
+          ).bind(updatedChannelId, existing.owner_user_id || 1000000, newChatId, newChatId).run();
+        }
+      }
+
       const updatedName = body.name || existing.name;
       const updatedSlug = body.divar_category_slug || existing.divar_category_slug;
       const updatedDealType = body.deal_type || existing.deal_type;
       const updatedPropType = body.property_type || existing.property_type;
-      const updatedCities = body.city_ids ? JSON.stringify(body.city_ids) : existing.city_ids_json;
-      const updatedDistricts = body.districts ? JSON.stringify(body.districts) : existing.districts_json;
+      const updatedCities = body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]');
+      const updatedDistricts = body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]');
 
       await env.DB.prepare(
         `UPDATE filter_rules SET
+          channel_id = ?,
           name = ?,
           divar_category_slug = ?,
           deal_type = ?,
@@ -227,25 +253,26 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           updated_at = unixepoch()
         WHERE id = ?`
       ).bind(
+        updatedChannelId,
         updatedName,
         updatedSlug,
         updatedDealType,
         updatedPropType,
         updatedCities,
         updatedDistricts,
-        body.min_budget !== undefined ? Number(body.min_budget) : existing.min_budget,
-        body.max_budget !== undefined ? Number(body.max_budget) : existing.max_budget,
-        body.min_rent !== undefined ? Number(body.min_rent) : existing.min_rent,
-        body.max_rent !== undefined ? Number(body.max_rent) : existing.max_rent,
-        body.min_area !== undefined ? Number(body.min_area) : existing.min_area,
-        body.max_area !== undefined ? Number(body.max_area) : existing.max_area,
-        body.tolerance_pct !== undefined ? Number(body.tolerance_pct) : existing.tolerance_pct,
-        body.min_match_score !== undefined ? Number(body.min_match_score) : existing.min_match_score,
-        body.stage2_filters ? JSON.stringify(body.stage2_filters) : existing.stage2_filters_json,
-        body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : existing.geo_polygon_json,
-        body.exclude_agency !== undefined ? Number(body.exclude_agency) : existing.exclude_agency,
-        body.max_post_age_hours !== undefined ? Number(body.max_post_age_hours) : existing.max_post_age_hours,
-        body.negative_keywords ? JSON.stringify(body.negative_keywords) : existing.negative_keywords_json,
+        body.min_budget !== undefined ? (Number(body.min_budget) || 0) : (Number(existing.min_budget) || 0),
+        body.max_budget !== undefined ? (Number(body.max_budget) || 0) : (Number(existing.max_budget) || 0),
+        body.min_rent !== undefined ? (Number(body.min_rent) || 0) : (Number(existing.min_rent) || 0),
+        body.max_rent !== undefined ? (Number(body.max_rent) || 0) : (Number(existing.max_rent) || 0),
+        body.min_area !== undefined ? (Number(body.min_area) || 0) : (Number(existing.min_area) || 0),
+        body.max_area !== undefined ? (Number(body.max_area) || 0) : (Number(existing.max_area) || 0),
+        body.tolerance_pct !== undefined ? (Number(body.tolerance_pct) || 0.15) : (Number(existing.tolerance_pct) || 0.15),
+        body.min_match_score !== undefined ? (Number(body.min_match_score) || 65) : (Number(existing.min_match_score) || 65),
+        body.stage2_filters ? JSON.stringify(body.stage2_filters) : (existing.stage2_filters_json ?? '{}'),
+        body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : (existing.geo_polygon_json ?? null),
+        body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
+        body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
+        body.negative_keywords ? JSON.stringify(body.negative_keywords) : (existing.negative_keywords_json ?? null),
         ruleId
       ).run();
 
@@ -434,6 +461,50 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       const cardPreview = buildTelegramCardPayload(ad, matchResult, mockRule, body.channel_id || '@preview_channel', false);
 
       return jsonResponse({ ad, matchResult, cardPreview });
+    }
+
+    // 6. Verify Telegram Channel & Bot Admin Permissions
+    if (path === '/api/admin/verify-channel' && request.method === 'GET') {
+      const chatId = (url.searchParams.get('chat_id') || '@aliabadmelk').trim();
+      const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getChat?chat_id=${encodeURIComponent(chatId)}`);
+      const tgJson: any = await tgRes.json();
+
+      let botMemberJson: any = null;
+      if (tgJson.ok) {
+        const meRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+        const meJson: any = await meRes.json();
+        if (meJson.ok) {
+          const memberRes = await fetch(
+            `https://api.telegram.org/bot${env.BOT_TOKEN}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${meJson.result.id}`
+          );
+          botMemberJson = await memberRes.json();
+        }
+      }
+
+      return jsonResponse({
+        chat_id: chatId,
+        chat: tgJson,
+        bot_member: botMemberJson
+      });
+    }
+
+    // 7. Send Test Message to Telegram Channel
+    if (path === '/api/admin/test-channel-message' && request.method === 'POST') {
+      const body: any = await request.json();
+      const chatId = (body.chat_id || '@aliabadmelk').trim();
+      const msg = body.text || `🤖 <b>تست ارتباط سامانه هوشمند املاک هیدرا</b>\n\n✅ اتصال کانال ${chatId} با موفقیت تأیید شد.\n⏱ زمان: ${new Date().toLocaleTimeString('fa-IR')}`;
+
+      const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: msg,
+          parse_mode: 'HTML'
+        })
+      });
+      const tgJson: any = await tgRes.json();
+      return jsonResponse({ ok: tgRes.ok && tgJson.ok, result: tgJson });
     }
 
     return jsonResponse({ error: 'Route not found' }, 404);

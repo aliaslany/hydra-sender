@@ -74,6 +74,7 @@ export interface ParsedDivarAd {
   floorText: string;
   unitsPerFloor?: string | null;
   primaryPhotoUrl: string | null;
+  imageUrls?: string[];
   latitude: number | null;
   longitude: number | null;
   postTimestamp: number;

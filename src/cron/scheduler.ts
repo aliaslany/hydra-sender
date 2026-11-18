@@ -20,13 +20,16 @@ export async function runScheduledTick(env: Env): Promise<void> {
   const activeRulesRes = await env.DB.prepare(
     `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_queued_count,
             s.pagination_cursor_date, s.pagination_page, s.search_uid, s.last_watermark_timestamp,
-            sub.id as sub_id, sub.searches_used_today, sub.total_ads_sent, sub.max_total_searches,
-            p.daily_ad_quota
+            sub.id as sub_id,
+            COALESCE(sub.searches_used_today, 0) as searches_used_today,
+            COALESCE(sub.total_ads_sent, 0) as total_ads_sent,
+            sub.max_total_searches,
+            COALESCE(p.daily_ad_quota, 1000) as daily_ad_quota
      FROM filter_rules r
      JOIN channels c ON r.channel_id = c.id
      JOIN sync_state s ON r.id = s.rule_id
-     JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
-     JOIN plans p ON sub.plan_id = p.id
+     LEFT JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
+     LEFT JOIN plans p ON sub.plan_id = p.id
      WHERE r.is_active = 1 AND c.is_enabled = 1 AND s.phase IN ('BACKFILL', 'LIVE')
      ORDER BY s.last_polled_at ASC
      LIMIT 2`
@@ -108,11 +111,11 @@ export async function runScheduledTick(env: Env): Promise<void> {
                consecutive_errors = 0
            WHERE rule_id = ?`
         ).bind(
-          shouldTransitionToLive ? 'LIVE' : row.phase,
+          shouldTransitionToLive ? 'LIVE' : (row.phase || 'BACKFILL'),
           newQueuedTotal,
-          shouldTransitionToLive ? null : searchRes.nextCursorDate,
-          shouldTransitionToLive ? 1 : (Number(row.pagination_page) || 1) + 1,
-          searchRes.searchUid,
+          shouldTransitionToLive ? null : (searchRes.nextCursorDate ?? null),
+          shouldTransitionToLive ? 1 : ((Number(row.pagination_page) || 1) + 1),
+          searchRes.searchUid ?? null,
           nowSec,
           nowSec,
           row.id
@@ -125,7 +128,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
     } catch (err: any) {
       await env.DB.prepare(
         `UPDATE sync_state SET consecutive_errors = consecutive_errors + 1, last_error_msg = ?, last_polled_at = ? WHERE rule_id = ?`
-      ).bind(String(err?.message || err), nowSec, row.id).run();
+      ).bind(String(err?.message || err || 'Unknown error'), nowSec, row.id).run();
     }
   }
 
@@ -153,24 +156,50 @@ export async function runScheduledTick(env: Env): Promise<void> {
       const tgJson: any = await tgRes.json();
 
       if (tgRes.ok && tgJson.ok) {
-        await env.DB.batch([
+        const msgId = Array.isArray(tgJson.result)
+          ? (tgJson.result[0]?.message_id || 0)
+          : (tgJson.result?.message_id || 0);
+
+        const batchStmts: D1PreparedStatement[] = [
           env.DB.prepare(
             `UPDATE sent_ads SET status = 'SENT', telegram_message_id = ?, sent_at = ? WHERE rule_id = ? AND post_token = ?`
-          ).bind(tgJson.result?.message_id || 0, Math.floor(Date.now() / 1000), item.rule_id, item.post_token),
-          env.DB.prepare(
-            `UPDATE subscriptions SET searches_used_today = searches_used_today + 1, total_ads_sent = total_ads_sent + 1
-             WHERE user_id = ? AND status = 'ACTIVE'`
-          ).bind(item.owner_user_id),
+          ).bind(msgId, Math.floor(Date.now() / 1000), item.rule_id, item.post_token),
           env.DB.prepare(
             `UPDATE sync_state SET backfill_dispatched_count = backfill_dispatched_count + 1 WHERE rule_id = ?`
           ).bind(item.rule_id)
-        ]);
+        ];
+
+        if (item.owner_user_id) {
+          batchStmts.push(
+            env.DB.prepare(
+              `UPDATE subscriptions SET searches_used_today = searches_used_today + 1, total_ads_sent = total_ads_sent + 1
+               WHERE user_id = ? AND status = 'ACTIVE'`
+            ).bind(item.owner_user_id)
+          );
+        }
+
+        await env.DB.batch(batchStmts);
+      } else if (tgRes.status === 429 || tgJson?.error_code === 429) {
+        const retrySec = tgJson?.parameters?.retry_after || 5;
+        console.warn(`Telegram rate limited: retry after ${retrySec}s. Remaining ads kept in QUEUED status.`);
+        break;
       } else {
-        await env.DB.prepare(
-          `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
-        ).bind(item.rule_id, item.post_token).run();
+        const errDesc = tgJson?.description || `HTTP ${tgRes.status}`;
+        console.error(`Telegram post failed for token ${item.post_token}:`, errDesc);
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
+          ).bind(item.rule_id, item.post_token),
+          env.DB.prepare(
+            `INSERT INTO system_logs (level, component, rule_id, message, meta_json) VALUES ('ERROR', 'TELEGRAM', ?, ?, ?)`
+          ).bind(
+            item.rule_id,
+            `Telegram post failed: ${errDesc}`,
+            JSON.stringify({ chat_id: payload?.body?.chat_id, token: item.post_token, error: errDesc })
+          )
+        ]);
       }
-    } catch {
+    } catch (err: any) {
       await env.DB.prepare(
         `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
       ).bind(item.rule_id, item.post_token).run();

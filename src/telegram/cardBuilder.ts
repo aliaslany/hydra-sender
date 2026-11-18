@@ -76,7 +76,7 @@ export function buildTelegramCardPayload(
   rule: FilterRule,
   chatId: string,
   isBackfill: boolean
-): { method: 'sendPhoto' | 'sendMessage'; body: Record<string, any> } {
+): { method: 'sendMediaGroup' | 'sendPhoto' | 'sendMessage'; body: Record<string, any> } {
   const score = evalResult.score;
   const isRent = ad.dealType === 'RENT';
 
@@ -243,12 +243,40 @@ export function buildTelegramCardPayload(
     ]
   };
 
-  if (ad.primaryPhotoUrl) {
+  // If multiple images are present, send as an album (sendMediaGroup)
+  const albumUrls = (ad.imageUrls && ad.imageUrls.length > 0)
+    ? ad.imageUrls
+    : (ad.primaryPhotoUrl ? [ad.primaryPhotoUrl] : []);
+
+  if (albumUrls.length > 1) {
+    const media = albumUrls.slice(0, 10).map((url, idx) => {
+      const item: Record<string, any> = {
+        type: 'photo',
+        media: url
+      };
+      if (idx === 0) {
+        // First media holds the rich caption with direct HTML link to Divar
+        item.caption = caption + `\n🔗 <a href="${divarUrl}">مشاهده مستقیم در دیوار</a>`;
+        item.parse_mode = 'HTML';
+      }
+      return item;
+    });
+
+    return {
+      method: 'sendMediaGroup',
+      body: {
+        chat_id: chatId,
+        media
+      }
+    };
+  }
+
+  if (albumUrls.length === 1) {
     return {
       method: 'sendPhoto',
       body: {
         chat_id: chatId,
-        photo: ad.primaryPhotoUrl,
+        photo: albumUrls[0],
         caption,
         parse_mode: 'HTML',
         reply_markup: replyMarkup

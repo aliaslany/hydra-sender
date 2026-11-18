@@ -188,6 +188,17 @@ async function ensureSchema(db: D1Database): Promise<void> {
     } catch (_) {}
   }
 
+  try {
+    await db.prepare(
+      `INSERT INTO users (telegram_id, username, full_name, role) VALUES (1000000, 'admin', 'مدیر سیستم', 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
+    ).run();
+    await db.prepare(
+      `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+       VALUES ('sub_admin_vip', 1000000, 'AGENCY_VIP', 'ACTIVE', unixepoch(), unixepoch() + 315360000)
+       ON CONFLICT(id) DO UPDATE SET status = 'ACTIVE', expires_at = unixepoch() + 315360000`
+    ).run();
+  } catch (_) {}
+
   schemaBootstrapped = true;
 }
 

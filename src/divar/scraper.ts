@@ -9,6 +9,15 @@ const DIVAR_HEADERS = {
   'Referer': 'https://divar.ir/'
 };
 
+function normalizeDivarCategorySlug(slug?: string): string {
+  if (!slug) return 'residential-sell';
+  if (slug === 'buy-residential') return 'residential-sell';
+  if (slug === 'residential-rent') return 'residential-rent';
+  if (slug === 'buy-commercial-property') return 'commercial-sell';
+  if (slug === 'commercial-rent') return 'commercial-rent';
+  return slug;
+}
+
 export interface DivarSearchResponse {
   tokens: string[];
   nextCursorDate: string | null;
@@ -32,8 +41,9 @@ export async function searchDivarPostList(
     districts = JSON.parse(rule.districts_json || '[]');
   } catch {}
 
+  const categorySlug = normalizeDivarCategorySlug(rule.divar_category_slug);
   const formData: Record<string, any> = {
-    category: { str: { value: rule.divar_category_slug || 'apartment-sell' } },
+    category: { str: { value: categorySlug } },
     sort: { str: { value: 'sort_date' } }
   };
 
@@ -72,7 +82,10 @@ export async function searchDivarPostList(
     city_ids: cityIds,
     source_view: 'CATEGORY',
     disable_recommendation: true,
-    form_data: { data: formData }
+    form_data: { data: formData },
+    search_data: {
+      form_data: { data: formData }
+    }
   };
 
   if (pagination && pagination.lastPostDate) {
@@ -109,10 +122,64 @@ export async function searchDivarPostList(
     }
   }
 
-  const nextCursorDate = data?.pagination?.data?.last_post_date || null;
-  const searchUid = data?.pagination?.data?.search_uid || null;
+  const nextCursorDate = data?.pagination?.data?.last_post_date ?? null;
+  const searchUid = data?.pagination?.data?.search_uid ?? null;
 
   return { tokens, nextCursorDate, searchUid };
+}
+
+function parseDivarPersianRelativeTime(text: string): number | null {
+  if (!text) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const norm = normalizePersianText(text);
+
+  if (norm.includes('لحظاتی پیش') || norm.includes('دقایقی پیش') || norm.includes('چند ثانیه پیش')) {
+    return now - 300;
+  }
+  if (norm.includes('یک ربع پیش')) {
+    return now - 900;
+  }
+  if (norm.includes('نیم ساعت پیش')) {
+    return now - 1800;
+  }
+
+  const hourMatch = norm.match(/(\d+)\s*ساعت\s*پیش/);
+  if (hourMatch) {
+    const hours = parseInt(hourMatch[1], 10);
+    return now - hours * 3600;
+  }
+
+  if (norm.includes('پریروز')) {
+    return now - 2 * 86400;
+  }
+  if (norm.includes('دیروز')) {
+    return now - 86400;
+  }
+
+  const dayMatch = norm.match(/(\d+)\s*روز\s*پیش/);
+  if (dayMatch) {
+    const days = parseInt(dayMatch[1], 10);
+    return now - days * 86400;
+  }
+
+  const weekMatch = norm.match(/(\d+)\s*هفته\s*پیش/);
+  if (weekMatch) {
+    const weeks = parseInt(weekMatch[1], 10);
+    return now - weeks * 7 * 86400;
+  }
+
+  const monthMatch = norm.match(/(\d+)\s*ماه\s*پیش/);
+  if (monthMatch) {
+    const months = parseInt(monthMatch[1], 10);
+    return now - months * 30 * 86400;
+  }
+
+  return null;
+}
+
+function convertDivarWebpToJpg(url: string): string {
+  if (!url) return url;
+  return url.replace('/webp_post/', '/post/').replace(/\.webp($|\?)/, '.jpg$1');
 }
 
 export async function fetchDivarPostDetail(
@@ -144,6 +211,7 @@ export async function fetchDivarPostDetail(
   let buildYear: number | null = null;
   let floorNumber: number | null = null;
   let floorText = '';
+  const imageUrls: string[] = [];
   let primaryPhotoUrl: string | null = null;
   let latitude: number | null = null;
   let longitude: number | null = null;
@@ -166,19 +234,47 @@ export async function fetchDivarPostDetail(
   const widgetSpecs: ParsedDivarAd['specs'] = {};
 
   for (const sec of sections) {
+    const sName = String(sec?.section_name || '').toUpperCase();
+    const isForbiddenSection = sName.includes('SIMILAR') || sName.includes('RELATED') || sName.includes('RECOMMEND') || sName.includes('AGENCY_POSTS') || sName.includes('BANNER');
+    const isImageSection = (sName === 'IMAGE' || sName === 'MEDIA' || !sName) && !isForbiddenSection;
+
     const widgets: any[] = sec?.widgets || [];
     for (const w of widgets) {
       const wType = w?.widget_type;
       const wData = w?.data || {};
 
+      // Parse relative time if available in widgets (e.g. SUBTITLE_ROW or subtitle / title)
+      if (wData.title && typeof wData.title === 'string' && wData.title.includes('پیش')) {
+        const parsed = parseDivarPersianRelativeTime(wData.title);
+        if (parsed) postTimestamp = parsed;
+      }
+      if (wData.subtitle && typeof wData.subtitle === 'string' && wData.subtitle.includes('پیش')) {
+        const parsed = parseDivarPersianRelativeTime(wData.subtitle);
+        if (parsed) postTimestamp = parsed;
+      }
+
       if (wType === 'LEGEND_TITLE_ROW' && wData.title) {
         title = wData.title;
       } else if (wType === 'DESCRIPTION_ROW' && wData.text) {
         description += '\n' + wData.text;
-      } else if (wType === 'IMAGE_CAROUSEL' || wType === 'IMAGE_SLIDER_ROW') {
+      } else if (isImageSection && (wType === 'IMAGE_CAROUSEL' || wType === 'IMAGE_SLIDER_ROW' || wType === 'IMAGE_ROW')) {
         const items = wData.items || [];
-        if (items.length > 0 && !primaryPhotoUrl) {
-          primaryPhotoUrl = items[0]?.image?.url || items[0]?.image_url || null;
+        for (const it of items) {
+          const rawU = it?.image?.url || it?.image_url;
+          if (rawU && typeof rawU === 'string') {
+            const u = convertDivarWebpToJpg(rawU);
+            if (!imageUrls.includes(u)) {
+              imageUrls.push(u);
+            }
+          }
+        }
+        if (wData.image?.url) {
+          const u = convertDivarWebpToJpg(wData.image.url);
+          if (!imageUrls.includes(u)) imageUrls.push(u);
+        }
+        if (wData.image_url) {
+          const u = convertDivarWebpToJpg(wData.image_url);
+          if (!imageUrls.includes(u)) imageUrls.push(u);
         }
       } else if (wType === 'MAP_ROW') {
         latitude =
@@ -278,7 +374,8 @@ export async function fetchDivarPostDetail(
     buildYear,
     floorNumber,
     floorText,
-    primaryPhotoUrl,
+    primaryPhotoUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+    imageUrls,
     latitude,
     longitude,
     postTimestamp,

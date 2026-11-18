@@ -143,7 +143,9 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         </div>
         <div class="form-group">
           <label>کانال تلگرام مقصد (@channel یا شناسه عددی):</label>
-          <input type="text" id="r-channel" required placeholder="@aliabadmelk" />
+          <input type="text" id="r-channel" list="channel-datalist" required placeholder="@aliabadmelk" />
+          <datalist id="channel-datalist"></datalist>
+          <small style="color:var(--muted); font-size:0.75rem;">می‌توانید کانال را تایپ کنید یا از کانال‌های متصل انتخاب نمایید.</small>
         </div>
         <div class="form-group">
           <label>نوع معامله و ملک (Stage 1):</label>
@@ -693,11 +695,21 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       if (ruleMap) ruleMap.setView([36.9025, 54.8558], 13);
     }
 
+    function updateChannelDatalist() {
+      const dl = document.getElementById('channel-datalist');
+      if (!dl) return;
+      dl.innerHTML = (state.channels || []).map(function(ch) {
+        return '<option value="' + ch.chat_id + '">' + (ch.title || ch.chat_id) + '</option>';
+      }).join('');
+    }
+
     function openCreateRuleModal() {
+      updateChannelDatalist();
       document.getElementById('rule-dialog-title').textContent = 'تعریف فیلتر دو مرحله‌ای دیوار';
       document.getElementById('r-edit-id').value = '';
       document.getElementById('r-name').value = '';
-      document.getElementById('r-channel').value = '@aliabadmelk';
+      document.getElementById('r-channel').readOnly = false;
+      document.getElementById('r-channel').value = (state.channels && state.channels.length > 0) ? state.channels[0].chat_id : '@aliabadmelk';
       document.getElementById('r-city-id').value = '823';
       document.getElementById('r-max-budget').value = '10000000000';
       document.getElementById('r-max-rent').value = '0';
@@ -721,16 +733,17 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
     }
 
     function openEditRuleModal(ruleId) {
+      updateChannelDatalist();
       const r = (state.rules || []).find(x => x.id === ruleId);
       if (!r) return;
       document.getElementById('rule-dialog-title').textContent = 'ویرایش فیلتر: ' + r.name;
       document.getElementById('r-edit-id').value = r.id;
       document.getElementById('r-name').value = r.name || '';
+      document.getElementById('r-channel').readOnly = false;
       document.getElementById('r-channel').value = r.chat_id || r.channel_id || '';
-      document.getElementById('r-channel').readOnly = true;
 
       const selectCat = document.getElementById('r-category');
-      const targetVal = \`\${r.divar_category_slug}|\${r.deal_type}|\${r.property_type}\`;
+      const targetVal = (r.divar_category_slug || '') + '|' + (r.deal_type || '') + '|' + (r.property_type || '');
       for (let i = 0; i < selectCat.options.length; i++) {
         if (selectCat.options[i].value === targetVal) selectCat.selectedIndex = i;
       }
@@ -883,6 +896,9 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
               <button class="btn btn-outline btn-sm" onclick="toggleChannel('\${ch.id}')">
                 \${ch.is_enabled ? '⏸ غیرفعال' : '▶️ فعال'}
               </button>
+              <button class="btn btn-outline btn-sm" onclick="testChannelSend('\${ch.chat_id}')" title="ارسال پیام آزمایشی به این کانال برای اطمینان از دسترسی">
+                📨 تست ارسال
+              </button>
               <button class="btn btn-danger btn-sm" onclick="deleteChannel('\${ch.id}')">🗑 حذف</button>
             </div>
           </td>
@@ -955,6 +971,24 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         await fetchCurrentTabData();
       } catch (err) {
         notify('خطا: ' + err.message);
+      }
+    }
+
+    async function testChannelSend(chatId) {
+      if (!confirm('آیا می‌خواهید یک پیام آزمایشی به کانال ' + chatId + ' ارسال کنید؟')) return;
+      try {
+        notify('در حال ارسال پیام تست به ' + chatId + '...');
+        const res = await apiCall('/api/admin/test-channel-message', {
+          method: 'POST',
+          body: JSON.stringify({ chat_id: chatId })
+        });
+        if (res.ok) {
+          notify('✅ پیام تست با موفقیت به کانال ارسال شد!');
+        } else {
+          notify('❌ خطا در ارسال تلگرام: ' + (res.result?.description || 'نامشخص'));
+        }
+      } catch (err) {
+        notify('❌ خطا: ' + err.message);
       }
     }
 
@@ -1190,7 +1224,23 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         document.getElementById('sim-score-area').textContent = (match.areaScore || 0) + ' / 25';
         document.getElementById('sim-score-specs').textContent = (match.specsScore || 0) + ' / 40';
 
-        document.getElementById('sim-telegram-card').innerHTML = res.cardPreview.text
+        const cardBody = res.cardPreview?.body || {};
+        const textContent = cardBody.caption || cardBody.text || '';
+
+        let photoMarkup = '';
+        if (cardBody.media && Array.isArray(cardBody.media)) {
+          photoMarkup = '<div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:12px; padding-bottom:6px;">' +
+            cardBody.media.map(m => '<img src="' + m.media + '" style="height:150px; border-radius:8px; object-fit:cover; border:1px solid #cbd5e1;" />').join('') +
+            '</div>';
+        } else if (cardBody.photo) {
+          photoMarkup = '<img src="' + cardBody.photo + '" style="width:100%; max-height:280px; border-radius:8px; object-fit:cover; margin-bottom:12px; border:1px solid #cbd5e1;" />';
+        } else if (res.ad?.imageUrls && res.ad.imageUrls.length > 0) {
+          photoMarkup = '<div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:12px; padding-bottom:6px;">' +
+            res.ad.imageUrls.map(u => '<img src="' + u + '" style="height:150px; border-radius:8px; object-fit:cover; border:1px solid #cbd5e1;" />').join('') +
+            '</div>';
+        }
+
+        const formattedText = (textContent || '')
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
@@ -1199,9 +1249,14 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           .replace(/&lt;i&gt;/g, '<i>')
           .replace(/&lt;\\/i&gt;/g, '</i>')
           .replace(/&lt;code&gt;/g, '<code>')
-          .replace(/&lt;\\/code&gt;/g, '</code>');
-        
-        const btnUrl = res.cardPreview.reply_markup?.inline_keyboard?.[0]?.[0]?.url || ('https://divar.ir/v/' + rawToken);
+          .replace(/&lt;\\/code&gt;/g, '</code>')
+          .replace(/&lt;a href="([^"]+)"&gt;/g, '<a href="$1" target="_blank" style="color:#0284c7; text-decoration:underline;">')
+          .replace(/&lt;\\/a&gt;/g, '</a>')
+          .replace(/\\n/g, '<br/>');
+
+        document.getElementById('sim-telegram-card').innerHTML = photoMarkup + formattedText;
+
+        const btnUrl = cardBody.reply_markup?.inline_keyboard?.[0]?.[0]?.url || ('https://divar.ir/v/' + rawToken);
         document.getElementById('sim-telegram-link').innerHTML = \`
           <a href="\${btnUrl}" target="_blank" class="telegram-btn-preview">🔗 مشاهده آگهی در دیوار</a>
         \`;
