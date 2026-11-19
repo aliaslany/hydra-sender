@@ -5,6 +5,7 @@ export interface Env {
   ADMIN_MASTER_TOKEN: string;
   SUPERADMIN_TELEGRAM_IDS: string;
   DIVAR_PROXY_URL?: string;
+  SHEYPOOR_PROXY_URL?: string;
   DEFAULT_TIMEZONE: string;
   MAX_CHANNEL_MSGS_PER_MIN: string;
   DEFAULT_TOLERANCE_PCT: string;
@@ -55,10 +56,14 @@ export interface FilterRule {
   show_btn_map?: number;
   show_btn_score?: number;
   show_btn_contact?: number;
+  source_divar?: number;
+  source_sheypoor?: number;
 }
 
 export interface ParsedDivarAd {
   token: string;
+  source?: 'divar' | 'sheypoor';
+  url?: string;
   title: string;
   description: string;
   cityPersian: string;

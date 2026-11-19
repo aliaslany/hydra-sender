@@ -95,6 +95,8 @@ const INIT_STATEMENTS = [
     show_btn_map INTEGER NOT NULL DEFAULT 1,
     show_btn_score INTEGER NOT NULL DEFAULT 1,
     show_btn_contact INTEGER NOT NULL DEFAULT 1,
+    source_divar INTEGER NOT NULL DEFAULT 1,
+    source_sheypoor INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
@@ -188,7 +190,9 @@ async function ensureSchema(db: D1Database): Promise<void> {
     'ALTER TABLE filter_rules ADD COLUMN show_btn_divar INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE filter_rules ADD COLUMN show_btn_map INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE filter_rules ADD COLUMN show_btn_score INTEGER NOT NULL DEFAULT 1',
-    'ALTER TABLE filter_rules ADD COLUMN show_btn_contact INTEGER NOT NULL DEFAULT 1'
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_contact INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN source_divar INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN source_sheypoor INTEGER NOT NULL DEFAULT 1'
   ];
   for (const mig of migrations) {
     try {

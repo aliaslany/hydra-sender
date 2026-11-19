@@ -1,5 +1,6 @@
 import { Env, FilterRule } from '../types';
 import { fetchDivarPostDetail, searchDivarPostList } from '../divar/scraper';
+import { fetchSheypoorPostDetail, searchSheypoorPostList } from '../sheypoor/scraper';
 import { evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 
@@ -45,12 +46,44 @@ export async function runScheduledTick(env: Env): Promise<void> {
 
     try {
       const isBackfill = row.phase === 'BACKFILL';
-      const pagination = isBackfill && row.pagination_cursor_date
-        ? { lastPostDate: row.pagination_cursor_date, page: Number(row.pagination_page) || 1, searchUid: row.search_uid }
-        : undefined;
+      const useDivar = row.source_divar !== 0;
+      const useSheypoor = row.source_sheypoor !== 0;
 
-      const searchRes = await searchDivarPostList(row as FilterRule, env, pagination);
-      const candidateTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
+      const candidateTokens: string[] = [];
+      let nextCursorDate: string | null = null;
+      let searchUid: string | null = null;
+
+      // 1. Fetch Divar candidates if enabled
+      if (useDivar) {
+        try {
+          const divarPagination = isBackfill && row.pagination_cursor_date && !row.pagination_cursor_date.startsWith('sp_')
+            ? { lastPostDate: row.pagination_cursor_date, page: Number(row.pagination_page) || 1, searchUid: row.search_uid }
+            : undefined;
+
+          const searchRes = await searchDivarPostList(row as FilterRule, env, divarPagination);
+          const divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
+          candidateTokens.push(...divarTokens);
+          nextCursorDate = searchRes.nextCursorDate;
+          searchUid = searchRes.searchUid;
+        } catch (de: any) {
+          console.error(`Divar search error for rule ${row.id}:`, de?.message || de);
+        }
+      }
+
+      // 2. Fetch Sheypoor candidates if enabled
+      if (useSheypoor) {
+        try {
+          const spPage = isBackfill ? (Number(row.pagination_page) || 1) : 1;
+          const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage });
+          const spTokens = isBackfill ? [...spRes.tokens].reverse() : spRes.tokens;
+          candidateTokens.push(...spTokens);
+          if (!nextCursorDate && spRes.nextCursorDate) {
+            nextCursorDate = `sp_${spRes.nextCursorDate}`;
+          }
+        } catch (se: any) {
+          console.error(`Sheypoor search error for rule ${row.id}:`, se?.message || se);
+        }
+      }
 
       let queuedThisRule = 0;
       const batchStatements: D1PreparedStatement[] = [];
@@ -63,12 +96,14 @@ export async function runScheduledTick(env: Env): Promise<void> {
         ).bind(row.id, token).first();
 
         if (existing) {
-          if (!isBackfill) break; // In LIVE mode, stop as soon as we hit an already-seen token
           continue;
         }
 
         detailFetchesUsed++;
-        const ad = await fetchDivarPostDetail(token, row.deal_type, env);
+        const isSheypoor = token.startsWith('sp_');
+        const ad = isSheypoor
+          ? await fetchSheypoorPostDetail(token, row.deal_type, env)
+          : await fetchDivarPostDetail(token, row.deal_type, env);
         if (!ad) continue;
 
         const evalRes = evaluateAdMatch(ad, row as FilterRule);
@@ -96,7 +131,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
 
       // Transition BACKFILL -> LIVE once backfill target is reached or no further pages exist
       const newQueuedTotal = Number(row.backfill_queued_count) + queuedThisRule;
-      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || !searchRes.nextCursorDate);
+      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || !nextCursorDate);
 
       batchStatements.push(
         env.DB.prepare(
@@ -113,9 +148,9 @@ export async function runScheduledTick(env: Env): Promise<void> {
         ).bind(
           shouldTransitionToLive ? 'LIVE' : (row.phase || 'BACKFILL'),
           newQueuedTotal,
-          shouldTransitionToLive ? null : (searchRes.nextCursorDate ?? null),
+          shouldTransitionToLive ? null : (nextCursorDate ?? null),
           shouldTransitionToLive ? 1 : ((Number(row.pagination_page) || 1) + 1),
-          searchRes.searchUid ?? null,
+          searchUid ?? null,
           nowSec,
           nowSec,
           row.id

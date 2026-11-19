@@ -193,6 +193,7 @@ export function buildTelegramCardPayload(
     if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
     if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
     tags.push('#املاک_امیران', '#علی_آباد_ملک');
+    tags.push(ad.source === 'sheypoor' || ad.token.startsWith('sp_') ? '#شیپور' : '#دیوار');
 
     captionLines = [
       `🏠 <b>[نوع ملک: ${escapeHtml(propType)}]</b>`,
@@ -361,6 +362,7 @@ export function buildTelegramCardPayload(
     if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
     if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
     tags.push('#املاک_امیران', '#علی_آباد_ملک');
+    tags.push(ad.source === 'sheypoor' || ad.token.startsWith('sp_') ? '#شیپور' : '#دیوار');
 
     captionLines = [
       `🏠 <b>[نوع ملک: ${escapeHtml(propType)}]</b>`,
@@ -422,13 +424,18 @@ export function buildTelegramCardPayload(
   const showBtnScore = rule.show_btn_score !== 0;
   const showBtnContact = rule.show_btn_contact !== 0;
 
-  const divarUrl = `https://divar.ir/v/${ad.token}`;
+  const isSheypoor = ad.source === 'sheypoor' || ad.token.startsWith('sp_');
+  const sourceLabelFa = isSheypoor ? 'شیپور' : 'دیوار';
+  const cleanSpId = ad.token.replace(/^sp_/, '');
+  const sourceUrl = isSheypoor
+    ? (ad.url || `https://www.sheypoor.com/v/${cleanSpId}`)
+    : (ad.url || `https://divar.ir/v/${ad.token}`);
   const inlineKeyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [];
 
-  // Row 1: Divar and/or Map
+  // Row 1: Source (Divar / Sheypoor) and/or Map
   const row1: Array<{ text: string; url?: string; callback_data?: string }> = [];
   if (showBtnDivar) {
-    row1.push({ text: '🔗 مشاهده آگهی در دیوار', url: divarUrl });
+    row1.push({ text: `🔗 مشاهده آگهی در ${sourceLabelFa}`, url: sourceUrl });
   }
   if (showBtnMap && ad.latitude && ad.longitude) {
     row1.push({ text: '🗺 موقعیت روی نقشه', url: `https://maps.google.com/?q=${ad.latitude},${ad.longitude}` });
@@ -463,9 +470,9 @@ export function buildTelegramCardPayload(
         media: url
       };
       if (idx === 0) {
-        // First media holds the rich caption with direct HTML link to Divar
+        // First media holds the rich caption with direct HTML link
         item.caption = showBtnDivar
-          ? caption + `\n🔗 <a href="${divarUrl}">مشاهده مستقیم در دیوار</a>`
+          ? caption + `\n🔗 <a href="${sourceUrl}">مشاهده مستقیم در ${sourceLabelFa}</a>`
           : caption;
         item.parse_mode = 'HTML';
       }

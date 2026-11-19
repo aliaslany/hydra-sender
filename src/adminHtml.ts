@@ -1,32 +1,95 @@
 export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>پنل مدیریت ربات املاک هیدرا | Hydra-Sender Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     :root {
-      --bg: #f8fafc; --surface: #ffffff; --text: #0f172a; --muted: #64748b;
-      --primary: #2563eb; --primary-hover: #1d4ed8; --success: #16a34a;
-      --warn: #ea580c; --danger: #dc2626; --border: #e2e8f0; --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-subtle: #f1f5f9;
+      --surface-hover: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --border-focus: #3b82f6;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success: #16a34a;
+      --success-light: #dcfce7;
+      --warn: #d97706;
+      --warn-light: #fef3c7;
+      --danger: #dc2626;
+      --danger-light: #fee2e2;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --card-shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+      --badge-bg: #f1f5f9;
+      --badge-text: #475569;
+      --sheypoor: #0284c7;
+      --sheypoor-light: #e0f2fe;
+      --divar: #dc2626;
+      --divar-light: #fee2e2;
+      --header-bg: rgba(255, 255, 255, 0.92);
+      --dialog-backdrop: rgba(15, 23, 42, 0.6);
     }
-    * { box-sizing: border-box; font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif; }
-    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; }
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --surface: #131b2e;
+      --surface-subtle: #0f172a;
+      --surface-hover: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #26334d;
+      --border-focus: #38bdf8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --primary-light: #082f49;
+      --success: #22c55e;
+      --success-light: #14532d;
+      --warn: #f59e0b;
+      --warn-light: #451a03;
+      --danger: #ef4444;
+      --danger-light: #7f1d1d;
+      --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --card-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.6);
+      --badge-bg: #1e293b;
+      --badge-text: #94a3b8;
+      --sheypoor: #38bdf8;
+      --sheypoor-light: #082f49;
+      --divar: #f87171;
+      --divar-light: #450a0a;
+      --header-bg: rgba(19, 27, 46, 0.92);
+      --dialog-backdrop: rgba(0, 0, 0, 0.75);
+    }
+    * { box-sizing: border-box; font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; transition: background 0.2s ease, color 0.2s ease; }
     header {
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      padding: 0.85rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;
+      background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border); padding: 0.85rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;
+      position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    header h1 { margin: 0; font-size: 1.2rem; color: #1e293b; display: flex; align-items: center; gap: 0.5rem; }
-    .header-controls { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 1.25rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
+    .header-controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .theme-toggle-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 1.15rem; cursor: pointer;
+      background: var(--surface-subtle); border: 1px solid var(--border); color: var(--text);
+      transition: all 0.2s ease;
+    }
+    .theme-toggle-btn:hover { background: var(--surface-hover); transform: scale(1.08); }
     nav[role="tablist"] {
       display: flex; gap: 0.25rem; background: var(--surface);
       padding: 0.4rem 1.5rem; border-bottom: 1px solid var(--border); overflow-x: auto;
     }
     nav[role="tablist"] button {
       background: transparent; border: none; border-bottom: 3px solid transparent;
-      padding: 0.65rem 1rem; cursor: pointer; font-weight: 600; color: var(--muted); font-size: 0.9rem;
+      padding: 0.65rem 1rem; cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.9rem;
       white-space: nowrap; transition: all 0.15s ease;
     }
     nav[role="tablist"] button[aria-selected="true"] {
@@ -35,55 +98,62 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
     nav[role="tablist"] button:hover { color: var(--text); }
     main { max-width: 1280px; margin: 1.25rem auto; padding: 0 1.25rem; }
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.6rem; padding: 1.25rem; margin-bottom: 1.25rem; box-shadow: var(--card-shadow); }
-    .kpi-title { font-size: 0.85rem; color: var(--muted); font-weight: 500; }
-    .kpi-val { font-size: 1.85rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+      padding: 1.25rem; margin-bottom: 1.25rem; box-shadow: var(--card-shadow); transition: box-shadow 0.2s ease;
+    }
+    .card:hover { box-shadow: var(--card-shadow-hover); }
+    .kpi-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+    .kpi-val { font-size: 1.85rem; font-weight: 800; color: var(--primary); margin-top: 0.25rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     th, td { padding: 0.75rem 0.65rem; border-bottom: 1px solid var(--border); text-align: right; }
-    th { background: #f8fafc; font-weight: 600; color: #334155; }
-    tr:hover td { background: #f8fafc; }
+    th { background: var(--surface-subtle); font-weight: 600; color: var(--text); }
+    tr:hover td { background: var(--surface-hover); }
     .btn {
-      background: var(--primary); color: #fff; border: none; border-radius: 0.375rem;
-      padding: 0.45rem 0.85rem; cursor: pointer; font-size: 0.85rem; font-weight: 600;
-      display: inline-flex; align-items: center; gap: 0.35rem; transition: background 0.15s ease;
+      background: var(--primary); color: #fff; border: none; border-radius: 0.45rem;
+      padding: 0.5rem 0.95rem; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 0.35rem; transition: all 0.15s ease;
     }
-    .btn:hover { background: var(--primary-hover); }
+    .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
     .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: #eff6ff; }
-    .btn-sm { padding: 0.25rem 0.55rem; font-size: 0.78rem; border-radius: 0.25rem; }
+    .btn-outline:hover { background: var(--primary-light); }
+    .btn-sm { padding: 0.25rem 0.55rem; font-size: 0.78rem; border-radius: 0.35rem; }
     .btn-danger { background: var(--danger); color: #fff; }
     .btn-danger:hover { background: #b91c1c; }
     .btn-success { background: var(--success); color: #fff; }
     .btn-success:hover { background: #15803d; }
-    .badge { padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
-    .badge-live { background: #dcfce7; color: #166534; }
-    .badge-backfill { background: #ffedd5; color: #9a3412; }
-    .badge-warn { background: #fef3c7; color: #92400e; }
-    .badge-danger { background: #fee2e2; color: #991b1b; }
-    .badge-muted { background: #f1f5f9; color: #475569; }
+    .badge { padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; display: inline-block; white-space: nowrap; }
+    .badge-live { background: var(--success-light); color: var(--success); }
+    .badge-backfill { background: var(--warn-light); color: var(--warn); }
+    .badge-warn { background: var(--warn-light); color: var(--warn); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); }
+    .badge-muted { background: var(--badge-bg); color: var(--badge-text); }
+    .badge-sheypoor { background: var(--sheypoor-light); color: var(--sheypoor); border: 1px solid var(--sheypoor); }
+    .badge-divar { background: var(--divar-light); color: var(--divar); border: 1px solid var(--divar); }
     dialog {
-      border: 1px solid var(--border); border-radius: 0.6rem; padding: 1.5rem;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.5rem;
       max-width: 780px; width: 95%; max-height: 90vh; overflow-y: auto;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35);
     }
-    dialog::backdrop { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px); }
+    dialog::backdrop { background: var(--dialog-backdrop); backdrop-filter: blur(3px); }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 1rem; }
     @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
     .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
-    .form-group label { font-size: 0.82rem; font-weight: 600; color: #334155; }
+    .form-group label { font-size: 0.82rem; font-weight: 600; color: var(--text); }
     input, select, textarea {
-      padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 0.375rem;
-      font-size: 0.875rem; background: #fff; color: var(--text);
+      padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 0.45rem;
+      font-size: 0.875rem; background: var(--surface); color: var(--text); transition: border-color 0.15s ease;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
     #toast-region {
       position: fixed; bottom: 1.25rem; left: 1.25rem; background: #0f172a; color: #fff;
-      padding: 0.75rem 1.25rem; border-radius: 0.4rem; display: none; z-index: 99999;
+      padding: 0.75rem 1.25rem; border-radius: 0.5rem; display: none; z-index: 99999;
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); font-size: 0.875rem;
     }
     .telegram-card-preview {
       background: #182533; color: #f5f5f5; border-radius: 0.6rem; padding: 1.25rem;
-      font-family: system-ui, -apple-system, sans-serif; line-height: 1.7; white-space: pre-wrap;
+      font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif; line-height: 1.7; white-space: pre-wrap;
       direction: rtl; text-align: right; margin-top: 1rem; border: 1px solid #2b3b4d; font-size: 0.9rem;
     }
     .telegram-btn-preview {
@@ -94,12 +164,38 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       display: inline-flex; align-items: center; justify-content: center;
       width: 48px; height: 48px; border-radius: 50%; font-weight: 700; font-size: 1.1rem;
     }
-    .score-box.pass { background: #dcfce7; color: #166534; }
-    .score-box.fail { background: #fee2e2; color: #991b1b; }
+    .score-box.pass { background: var(--success-light); color: var(--success); }
+    .score-box.fail { background: var(--danger-light); color: var(--danger); }
     .actions-cell { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
-    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
-    #rule-map, #sim-map { height: 260px; width: 100%; border-radius: 0.4rem; border: 1px solid var(--border); margin-top: 0.35rem; z-index: 1; }
+    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
+    #rule-map, #sim-map { height: 260px; width: 100%; border-radius: 0.5rem; border: 1px solid var(--border); margin-top: 0.35rem; z-index: 1; }
     .map-controls-bar { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 0.35rem; }
+    /* Live Activity Feed Styles */
+    .live-pulse-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 0 rgba(34, 197, 94, 0.4);
+      animation: pulse-animation 2s infinite;
+    }
+    @keyframes pulse-animation {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+    .activity-row-new {
+      animation: highlight-new-row 2.5s ease-out;
+    }
+    @keyframes highlight-new-row {
+      0% { background: rgba(56, 189, 248, 0.3); }
+      100% { background: transparent; }
+    }
+    .filter-chip {
+      padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface-subtle); color: var(--text-muted);
+      transition: all 0.15s ease;
+    }
+    .filter-chip.active {
+      background: var(--primary); color: #fff; border-color: var(--primary);
+    }
   </style>
 </head>
 <body>
@@ -109,6 +205,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       <span id="api-connection-badge" class="badge badge-backfill">در انتظار اتصال...</span>
       <button class="btn btn-outline btn-sm" onclick="triggerCronTick()" title="اجرای فوری بررسی و ارسال آگهی‌ها">⚡ اجرای کرون‌تیک</button>
       <button class="btn btn-outline btn-sm" onclick="openAuthDialog()">🔑 تنظیمات اتصال و توکن</button>
+      <button class="theme-toggle-btn" id="theme-toggle" onclick="toggleTheme()" title="تغییر حالت تاریک / روشن">🌓</button>
     </div>
   </header>
 
@@ -131,9 +228,27 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
 
   <!-- Rule Add / Edit Dialog -->
   <dialog id="rule-dialog">
-    <h3 id="rule-dialog-title" style="margin-top:0;">تعریف فیلتر دو مرحله‌ای دیوار</h3>
+    <h3 id="rule-dialog-title" style="margin-top:0;">تعریف فیلتر دو مرحله‌ای هوشمند (دیوار و شیپور)</h3>
     <form id="rule-form" onsubmit="submitRuleForm(event)">
       <input type="hidden" id="r-edit-id" value="" />
+
+      <!-- Data Sources: Divar & Sheypoor -->
+      <div style="background:var(--surface-subtle); padding:0.85rem; border-radius:0.5rem; margin-bottom:1rem; border:1px solid var(--border);">
+        <h4 style="margin:0 0 0.4rem 0; font-size:0.88rem; color:var(--text);">📡 منابع استخراج آگهی (Data Sources):</h4>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.6rem 0;">
+          سامانه‌های مورد نظر جهت پایش، ارزیابی و استخراج آگهی‌های این فیلتر را انتخاب کنید:
+        </p>
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.86rem; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="r-source-divar" checked />
+            <span style="color:var(--divar); font-weight:700;">🟢 سامانه دیوار (Divar)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.86rem; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="r-source-sheypoor" checked />
+            <span style="color:var(--sheypoor); font-weight:700;">🔵 سامانه شیپور (Sheypoor)</span>
+          </label>
+        </div>
+      </div>
       
       <!-- Core Information -->
       <div class="form-grid">
@@ -440,6 +555,14 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
     }
 
     function switchTab(tabId) {
+      if (livePollTimer) {
+        clearInterval(livePollTimer);
+        livePollTimer = null;
+      }
+      if (activityObserver) {
+        activityObserver.disconnect();
+        activityObserver = null;
+      }
       state.activeTab = tabId;
       document.querySelectorAll('nav[role="tablist"] button').forEach(b => {
         b.setAttribute('aria-selected', b.id === 'tab-' + tabId ? 'true' : 'false');
@@ -490,19 +613,174 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       }
     }
 
-    // TAB 1: OVERVIEW
-    function renderOverviewTab(container) {
-      const recentRows = (state.recentSent || []).map(item => \`
-        <tr>
-          <td><code>\${item.post_token}</code></td>
-          <td>\${item.rule_name || '-'}</td>
-          <td><code>\${item.chat_id || '-'}</code></td>
-          <td><span class="badge \${item.match_score >= 80 ? 'badge-live' : 'badge-warn'}">\${item.match_score}٪</span></td>
-          <td>\${item.sent_at ? new Date(item.sent_at * 1000).toLocaleTimeString('fa-IR') : '-'}</td>
-          <td><span class="badge badge-live">\${item.status}</span></td>
-        </tr>
-      \`).join('');
+    // TAB 1: OVERVIEW & LIVE ENDLESS ACTIVITY FEED
+    let activityState = {
+      offset: 0,
+      limit: 20,
+      total: 0,
+      hasMore: true,
+      isLoading: false,
+      filter: 'ALL',
+      latestDiscovered: 0,
+      items: []
+    };
+    let activityObserver = null;
+    let livePollTimer = null;
 
+    function renderActivityRow(item, isNew = false) {
+      const isSheypoor = String(item.post_token || '').startsWith('sp_');
+      const cleanId = String(item.post_token || '').replace(/^sp_/, '');
+      const directUrl = isSheypoor
+        ? 'https://www.sheypoor.com/v/' + cleanId
+        : 'https://divar.ir/v/' + item.post_token;
+      const sourceBadge = isSheypoor
+        ? '<span class="badge badge-sheypoor">🔵 شیپور</span>'
+        : '<span class="badge badge-divar">🟢 دیوار</span>';
+
+      let statusBadge = '';
+      if (item.status === 'SENT') {
+        statusBadge = '<span class="badge badge-live">🟢 ارسال‌شده</span>';
+      } else if (item.status === 'QUEUED') {
+        statusBadge = '<span class="badge badge-backfill">🟡 در صف ارسال</span>';
+      } else if (item.status === 'SKIPPED') {
+        statusBadge = '<span class="badge badge-muted">⚪ رد شده در فیلتر</span>';
+      } else {
+        statusBadge = '<span class="badge badge-danger">🔴 ناموفق</span>';
+      }
+
+      const score = Number(item.match_score) || 0;
+      const scoreBadge = score >= 80
+        ? '<span class="badge badge-live">' + score + '٪</span>'
+        : (score >= 65 ? '<span class="badge badge-warn">' + score + '٪</span>' : '<span class="badge badge-danger">' + score + '٪</span>');
+
+      const timeSec = item.sent_at || item.discovered_at || 0;
+      const timeStr = timeSec > 0
+        ? new Date(timeSec * 1000).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '-';
+
+      const newClass = isNew ? ' class="activity-row-new"' : '';
+
+      return '<tr' + newClass + ' data-status="' + item.status + '">' +
+        '<td>' + sourceBadge + '</td>' +
+        '<td><a href="' + directUrl + '" target="_blank" style="color:var(--primary); text-decoration:underline; font-weight:600;"><code>' + item.post_token + '</code> ↗</a></td>' +
+        '<td>' + (item.rule_name || '-') + '</td>' +
+        '<td><code>' + (item.chat_id || '-') + '</code></td>' +
+        '<td>' + scoreBadge + '</td>' +
+        '<td>' + timeStr + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+      '</tr>';
+    }
+
+    function renderFilteredActivities() {
+      const tbody = document.getElementById('activity-table-body');
+      if (!tbody) return;
+      const filtered = activityState.filter === 'ALL'
+        ? activityState.items
+        : activityState.items.filter(x => x.status === activityState.filter);
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">هیچ فعالیتی با وضعیت انتخاب‌شده ثبت نشده است.</td></tr>';
+      } else {
+        tbody.innerHTML = filtered.map(item => renderActivityRow(item)).join('');
+      }
+    }
+
+    function setActivityFilter(filterName) {
+      activityState.filter = filterName;
+      document.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.toggle('active', c.id === 'chip-' + filterName);
+      });
+      renderFilteredActivities();
+    }
+
+    async function loadMoreActivities(isInitial = false) {
+      if (activityState.isLoading || (!activityState.hasMore && !isInitial)) return;
+      activityState.isLoading = true;
+      const sentinel = document.getElementById('activity-sentinel');
+      if (sentinel) sentinel.innerHTML = '<span class="live-pulse-dot" style="margin-left:6px;"></span> در حال بارگذاری فعالیت‌های بیشتر...';
+
+      try {
+        const data = await apiCall('/api/admin/activities?offset=' + activityState.offset + '&limit=' + activityState.limit);
+        const newItems = data.activities || [];
+        activityState.total = data.total || 0;
+        activityState.hasMore = data.hasMore === true;
+        activityState.offset += newItems.length;
+
+        for (const item of newItems) {
+          if (!activityState.items.some(x => x.rule_id === item.rule_id && x.post_token === item.post_token)) {
+            activityState.items.push(item);
+            if (item.discovered_at > activityState.latestDiscovered) {
+              activityState.latestDiscovered = item.discovered_at;
+            }
+          }
+        }
+
+        renderFilteredActivities();
+
+        const counter = document.getElementById('activity-total-counter');
+        if (counter) counter.textContent = activityState.items.length + ' از ' + activityState.total + ' فعالیت';
+
+        if (sentinel) {
+          if (activityState.hasMore) {
+            sentinel.innerHTML = '⬇️ برای مشاهده موارد بیشتر اسکرول کنید';
+          } else {
+            sentinel.innerHTML = '✅ تمامی فعالیت‌ها بارگذاری شدند (پایان لیست)';
+          }
+        }
+      } catch (err) {
+        if (sentinel) sentinel.innerHTML = 'خطا در بارگذاری فعالیت‌ها: ' + err.message;
+      } finally {
+        activityState.isLoading = false;
+      }
+    }
+
+    async function pollNewActivities() {
+      if (state.activeTab !== 'overview' || activityState.isLoading) return;
+      if (activityState.latestDiscovered <= 0) return;
+
+      try {
+        const data = await apiCall('/api/admin/activities?since=' + activityState.latestDiscovered);
+        const fresh = data.activities || [];
+        if (fresh.length > 0) {
+          let added = 0;
+          const tbody = document.getElementById('activity-table-body');
+          for (const item of fresh.reverse()) {
+            if (!activityState.items.some(x => x.rule_id === item.rule_id && x.post_token === item.post_token)) {
+              activityState.items.unshift(item);
+              if (item.discovered_at > activityState.latestDiscovered) {
+                activityState.latestDiscovered = item.discovered_at;
+              }
+              if (tbody && (activityState.filter === 'ALL' || activityState.filter === item.status)) {
+                const tempDiv = document.createElement('tbody');
+                tempDiv.innerHTML = renderActivityRow(item, true);
+                if (tbody.firstChild) {
+                  tbody.insertBefore(tempDiv.firstChild, tbody.firstChild);
+                } else {
+                  tbody.appendChild(tempDiv.firstChild);
+                }
+              }
+              added++;
+            }
+          }
+          if (added > 0) {
+            activityState.total += added;
+            const counter = document.getElementById('activity-total-counter');
+            if (counter) counter.textContent = activityState.items.length + ' از ' + activityState.total + ' فعالیت';
+          }
+        }
+      } catch (_) {}
+    }
+
+    function reloadActivities() {
+      activityState.offset = 0;
+      activityState.total = 0;
+      activityState.hasMore = true;
+      activityState.items = [];
+      activityState.latestDiscovered = 0;
+      loadMoreActivities(true);
+    }
+
+    function renderOverviewTab(container) {
       container.innerHTML = \`
         <div class="kpi-grid">
           <div class="card">
@@ -532,35 +810,67 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             <h3 style="margin:0;">🚀 عملیات سریع سیستم</h3>
             <div style="display:flex; gap:0.5rem;">
               <button class="btn" onclick="openCreateRuleModal()">➕ تعریف فیلتر دو مرحله‌ای جدید</button>
-              <button class="btn btn-outline" onclick="triggerCronTick()">⚡ اجرای فوری پایش دیوار (Cron Tick)</button>
+              <button class="btn btn-outline" onclick="triggerCronTick()">⚡ اجرای فوری پایش دیوار و شیپور (Cron Tick)</button>
             </div>
           </div>
-          <p style="color:var(--muted); font-size:0.875rem; margin:0;">
-            سیستم به صورت خودکار هر ۱ دقیقه یک‌بار توسط Cron Trigger آگهی‌های جدید دیوار را دریافت کرده و پس از فیلتر محدوده نقشه و حذف املاک به کانال تلگرام ارسال می‌کند.
+          <p style="color:var(--text-muted); font-size:0.875rem; margin:0;">
+            سیستم به صورت خودکار هر ۱ دقیقه یک‌بار توسط Cron Trigger آگهی‌های جدید دیوار و شیپور را دریافت کرده و پس از فیلتر محدوده نقشه و حذف املاک به کانال تلگرام ارسال می‌کند.
           </p>
         </div>
 
         <div class="card">
-          <h3 style="margin:0 0 1rem 0;">📋 آخرین آگهی‌های ارسالی به کانال‌ها</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.75rem;">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <span class="live-pulse-dot"></span>
+              <h3 style="margin:0;">📋 جریان زنده و آخرین فعالیت‌های ربات (Live Activity Feed)</h3>
+              <span id="activity-total-counter" class="badge badge-live">در حال بارگذاری...</span>
+            </div>
+            <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+              <button class="filter-chip active" id="chip-ALL" onclick="setActivityFilter('ALL')">همه</button>
+              <button class="filter-chip" id="chip-SENT" onclick="setActivityFilter('SENT')">🟢 ارسال‌شده</button>
+              <button class="filter-chip" id="chip-QUEUED" onclick="setActivityFilter('QUEUED')">🟡 در صف</button>
+              <button class="filter-chip" id="chip-SKIPPED" onclick="setActivityFilter('SKIPPED')">⚪ رد شده</button>
+              <button class="btn btn-outline btn-sm" onclick="reloadActivities()" title="بروزرسانی مجدد">🔄 تازه‌سازی</button>
+            </div>
+          </div>
+
           <div style="overflow-x:auto;">
             <table>
               <thead>
                 <tr>
-                  <th>توکن دیوار</th>
+                  <th>سامانه</th>
+                  <th>آگهی و لینک مستقیم</th>
                   <th>نام فیلتر</th>
                   <th>کانال مقصد</th>
-                  <th>امتیاز تطابق</th>
-                  <th>زمان ارسال</th>
-                  <th>وضعیت</th>
+                  <th>درصد تطابق</th>
+                  <th>زمان</th>
+                  <th>وضعیت عملیات</th>
                 </tr>
               </thead>
-              <tbody>
-                \${recentRows || '<tr><td colspan="6" class="empty-state">هنوز آگهی جدیدی در ۲۴ ساعت اخیر ارسال نشده است.</td></tr>'}
+              <tbody id="activity-table-body">
               </tbody>
             </table>
           </div>
+          <div id="activity-sentinel" style="padding:1rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+            در حال بارگذاری فعالیت‌ها...
+          </div>
         </div>
       \`;
+
+      reloadActivities();
+
+      if (activityObserver) activityObserver.disconnect();
+      activityObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && activityState.hasMore && !activityState.isLoading) {
+          loadMoreActivities();
+        }
+      }, { threshold: 0.1 });
+
+      const sentinel = document.getElementById('activity-sentinel');
+      if (sentinel) activityObserver.observe(sentinel);
+
+      if (livePollTimer) clearInterval(livePollTimer);
+      livePollTimer = setInterval(pollNewActivities, 6500);
     }
 
     // TAB 2: RULES
@@ -572,11 +882,17 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           if (Array.isArray(p)) polyCount = p.length;
         } catch(_) {}
 
+        let sourceBadges = '';
+        if (r.source_divar !== 0) sourceBadges += '<span class="badge badge-divar" style="margin-left:4px;">🟢 دیوار</span>';
+        if (r.source_sheypoor !== 0) sourceBadges += '<span class="badge badge-sheypoor">🔵 شیپور</span>';
+        if (!sourceBadges) sourceBadges = '<span class="badge badge-danger">بدون منبع!</span>';
+
         return \`
           <tr>
             <td>
               <strong>\${r.name}</strong>
-              <div style="font-size:0.75rem; color:var(--muted);">شهر: \${r.city_ids_json === '["823"]' ? 'علی‌آباد کتول' : r.city_ids_json}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">شهر: \${r.city_ids_json === '["823"]' ? 'علی‌آباد کتول' : r.city_ids_json}</div>
+              <div style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">\${sourceBadges}</div>
             </td>
             <td><code>\${r.chat_id || r.channel_id}</code></td>
             <td>\${r.divar_category_slug}</td>
@@ -752,6 +1068,8 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       document.getElementById('r-balcony').checked = false;
       document.getElementById('r-skeleton').value = '';
       document.getElementById('r-direction').value = '';
+      document.getElementById('r-source-divar').checked = true;
+      document.getElementById('r-source-sheypoor').checked = true;
       document.getElementById('r-btn-divar').checked = true;
       document.getElementById('r-btn-map').checked = true;
       document.getElementById('r-btn-score').checked = true;
@@ -806,6 +1124,8 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       document.getElementById('r-skeleton').value = stage2.skeleton || '';
       document.getElementById('r-direction').value = stage2.direction || '';
 
+      document.getElementById('r-source-divar').checked = r.source_divar !== 0;
+      document.getElementById('r-source-sheypoor').checked = r.source_sheypoor !== 0;
       document.getElementById('r-btn-divar').checked = r.show_btn_divar !== 0;
       document.getElementById('r-btn-map').checked = r.show_btn_map !== 0;
       document.getElementById('r-btn-score').checked = r.show_btn_score !== 0;
@@ -852,6 +1172,8 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         show_btn_map: document.getElementById('r-btn-map').checked ? 1 : 0,
         show_btn_score: document.getElementById('r-btn-score').checked ? 1 : 0,
         show_btn_contact: document.getElementById('r-btn-contact').checked ? 1 : 0,
+        source_divar: document.getElementById('r-source-divar').checked ? 1 : 0,
+        source_sheypoor: document.getElementById('r-source-sheypoor').checked ? 1 : 0,
         stage2_filters: {
           parking: document.getElementById('r-parking').checked,
           elevator: document.getElementById('r-elevator').checked,
@@ -1337,6 +1659,28 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         notify('خطا در ارزیابی آگهی: ' + err.message);
       }
     }
+
+
+    // Dark / Light Theme logic
+    function initTheme() {
+      const saved = localStorage.getItem('hydra_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      setTheme(saved);
+    }
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('hydra_theme', theme);
+      const btn = document.getElementById('theme-toggle');
+      if (btn) {
+        btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        btn.title = theme === 'dark' ? 'تغییر به حالت روشن' : 'تغییر به حالت تاریک';
+      }
+    }
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+
+    initTheme();
 
     // Start initial tab load
     fetchCurrentTabData();

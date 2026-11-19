@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS filter_rules (
     show_btn_map INTEGER NOT NULL DEFAULT 1,
     show_btn_score INTEGER NOT NULL DEFAULT 1,
     show_btn_contact INTEGER NOT NULL DEFAULT 1,
+    source_divar INTEGER NOT NULL DEFAULT 1,
+    source_sheypoor INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

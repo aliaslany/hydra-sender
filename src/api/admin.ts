@@ -1,5 +1,6 @@
-import { Env, FilterRule } from '../types';
+import { Env, FilterRule, ParsedDivarAd } from '../types';
 import { fetchDivarPostDetail } from '../divar/scraper';
+import { fetchSheypoorPostDetail } from '../sheypoor/scraper';
 import { evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 import { runScheduledTick } from '../cron/scheduler';
@@ -72,6 +73,55 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       });
     }
 
+    // 1.5. GET /api/admin/activities (Endless Scroll & Live Stream)
+    if (path === '/api/admin/activities' && request.method === 'GET') {
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10));
+      const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+      const since = parseInt(url.searchParams.get('since') || '0', 10);
+
+      if (since > 0) {
+        const recent = await env.DB.prepare(
+          `SELECT sa.*, r.name as rule_name, c.chat_id
+           FROM sent_ads sa
+           LEFT JOIN filter_rules r ON sa.rule_id = r.id
+           LEFT JOIN channels c ON sa.channel_id = c.id
+           WHERE sa.discovered_at > ?
+           ORDER BY sa.discovered_at DESC, sa.rowid DESC
+           LIMIT 50`
+        ).bind(since).all();
+
+        return jsonResponse({
+          ok: true,
+          activities: recent.results || [],
+          hasMore: false
+        });
+      }
+
+      const [rowsRes, countRes] = await env.DB.batch([
+        env.DB.prepare(
+          `SELECT sa.*, r.name as rule_name, c.chat_id
+           FROM sent_ads sa
+           LEFT JOIN filter_rules r ON sa.rule_id = r.id
+           LEFT JOIN channels c ON sa.channel_id = c.id
+           ORDER BY sa.discovered_at DESC, sa.rowid DESC
+           LIMIT ? OFFSET ?`
+        ).bind(limit, offset),
+        env.DB.prepare(`SELECT count(*) as total FROM sent_ads`)
+      ]);
+
+      const total = Number((countRes.results?.[0] as any)?.total || 0);
+      const activities = rowsRes.results || [];
+
+      return jsonResponse({
+        ok: true,
+        activities,
+        offset,
+        limit,
+        total,
+        hasMore: (offset + activities.length) < total
+      });
+    }
+
     // 2. GET & POST /api/admin/rules
     if (path === '/api/admin/rules' && request.method === 'GET') {
       const res = await env.DB.prepare(
@@ -116,8 +166,9 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
             min_budget, max_budget, min_rent, max_rent, min_area, max_area,
             tolerance_pct, min_match_score, stage2_filters_json,
             geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json,
-            show_btn_divar, show_btn_map, show_btn_score, show_btn_contact
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            show_btn_divar, show_btn_map, show_btn_score, show_btn_contact,
+            source_divar, source_sheypoor
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           ruleId,
           channelId,
@@ -144,7 +195,9 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : 1,
           body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
           body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
-          body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
+          body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1,
+          body.source_divar !== undefined ? Number(body.source_divar) : 1,
+          body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : 1
         ),
         env.DB.prepare(
           `INSERT INTO sync_state (rule_id, phase, backfill_target_count) VALUES (?, 'BACKFILL', ?)`
@@ -259,6 +312,8 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           show_btn_map = ?,
           show_btn_score = ?,
           show_btn_contact = ?,
+          source_divar = ?,
+          source_sheypoor = ?,
           updated_at = unixepoch()
         WHERE id = ?`
       ).bind(
@@ -286,6 +341,8 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
         body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
         body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
+        body.source_divar !== undefined ? Number(body.source_divar) : (existing.source_divar !== undefined ? Number(existing.source_divar) : 1),
+        body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : (existing.source_sheypoor !== undefined ? Number(existing.source_sheypoor) : 1),
         ruleId
       ).run();
 
@@ -469,9 +526,24 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         show_btn_contact: body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
       };
 
-      const ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);
+      const isSheypoor = postToken.startsWith('sp_') ||
+                         postToken.includes('sheypoor.com') ||
+                         (/^\d{6,12}$/.test(postToken.trim()));
+
+      let ad: ParsedDivarAd | null = null;
+      if (isSheypoor) {
+        const cleanSpId = postToken.replace(/^sp_/, '').match(/\d+/)?.[0] || postToken;
+        ad = await fetchSheypoorPostDetail(cleanSpId, mockRule.deal_type, env);
+      } else {
+        ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);
+      }
+
       if (!ad) {
-        return jsonResponse({ error: 'آگهی در دیوار یافت نشد یا دسترسی مسدود است' }, 404);
+        return jsonResponse({
+          error: isSheypoor
+            ? 'آگهی در شیپور یافت نشد یا دسترسی مسدود است'
+            : 'آگهی در دیوار یافت نشد یا دسترسی مسدود است'
+        }, 404);
       }
 
       const matchResult = evaluateAdMatch(ad, mockRule);
