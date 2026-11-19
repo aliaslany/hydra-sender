@@ -32,29 +32,29 @@ export function sanitizeHashtag(str: string | undefined | null): string {
   return str.trim().replace(/[\s\-،,]+/g, '_').replace(/[^\u0600-\u06FFa-zA-Z0-9_]/g, '');
 }
 
-export function formatSkeletonFa(val?: string): string {
+export function formatSkeletonFa(val?: string): string | null {
   if (val === 'CONCRETE') return 'بتنی';
   if (val === 'STEEL') return 'فلزی';
-  return 'نامشخص';
+  return null;
 }
 
-export function formatDirectionFa(val?: string): string {
+export function formatDirectionFa(val?: string): string | null {
   if (val === 'NORTH') return 'شمالی';
   if (val === 'SOUTH') return 'جنوبی';
   if (val === 'DUAL') return 'دو نبش / دو کله';
   if (val === 'EAST_WEST') return 'شرقی / غربی';
-  return 'نامشخص';
+  return null;
 }
 
-export function formatCabinetFa(val?: string): string {
+export function formatCabinetFa(val?: string): string | null {
   if (val === 'HIGH_GLOSS') return 'های‌گلاس';
   if (val === 'MEMBRANE_WOOD') return 'ممبران / چوب';
   if (val === 'MDF') return 'MDF';
   if (val === 'METAL') return 'فلزی';
-  return 'MDF';
+  return null;
 }
 
-export function formatHvacFa(cooling?: string[], heating?: string[]): string {
+export function formatHvacFa(cooling?: string[], heating?: string[]): string | null {
   const parts: string[] = [];
   if (heating && heating.length > 0) {
     if (heating.includes('FLOOR_HEATING')) parts.push('گرمایش از کف');
@@ -65,9 +65,10 @@ export function formatHvacFa(cooling?: string[], heating?: string[]): string {
     if (cooling.includes('DUCT_SPLIT')) parts.push('داکت اسپلیت');
     else if (cooling.includes('SPLIT_AC')) parts.push('کولر گازی');
     else if (cooling.includes('WATER_COOLER')) parts.push('کولر آبی');
+    else if (cooling.includes('CHILLER')) parts.push('چیلر');
   }
   if (parts.length > 0) return parts.join(' / ');
-  return 'پکیج و رادیاتور / اسپلیت';
+  return null;
 }
 
 export function buildTelegramCardPayload(
@@ -80,142 +81,330 @@ export function buildTelegramCardPayload(
   const score = evalResult.score;
   const isRent = ad.dealType === 'RENT';
 
-  const amenityText = (val: boolean | undefined, trueTxt = 'دارد', falseTxt = 'ندارد') => {
-    if (val === true) return trueTxt;
-    if (val === false) return falseTxt;
-    return 'دارد';
-  };
-
-  const district = ad.districtPersian && ad.districtPersian !== 'نامشخص' ? ad.districtPersian : 'مرکز شهر';
-  const locationText = `${ad.cityPersian || 'علی‌آباد کتول'}، ${district}`;
+  const district = ad.districtPersian && ad.districtPersian !== 'نامشخص' ? ad.districtPersian.trim() : '';
+  const locationText = district ? `${ad.cityPersian || 'علی‌آباد کتول'}، ${district}` : (ad.cityPersian || 'علی‌آباد کتول');
 
   let captionLines: string[] = [];
 
   if (isRent) {
     // ----------------- RENT TEMPLATE -----------------
     const propType = ad.propertyTypeFa || 'آپارتمان مسکونی';
-    const bedText = ad.bedrooms !== null && ad.bedrooms !== undefined ? (ad.bedrooms === 0 ? 'بدون خواب' : `${ad.bedrooms} خواب`) : '۲ خواب';
-    const floorInfo = ad.floorText ? ad.floorText : (ad.floorNumber !== null ? `طبقه ${ad.floorNumber}` : 'طبقه ۱');
-    const unitsInfo = ad.unitsPerFloor || 'تک واحدی';
-    const buildYearText = ad.buildYear ? `سال ${ad.buildYear}` : 'نوساز';
-    const evacText = ad.evacuationStatus || 'تخلیه فوری';
-    const tenantsText = ad.maxTenants || 'خانواده / بدون محدودیت';
+    const bedText = ad.bedrooms !== null && ad.bedrooms !== undefined
+      ? (ad.bedrooms === 0 ? 'بدون خواب' : `${ad.bedrooms} خواب`)
+      : null;
+    const floorInfo = ad.floorText ? ad.floorText : (ad.floorNumber !== null && ad.floorNumber !== undefined ? `طبقه ${ad.floorNumber}` : null);
+    const unitsInfo = ad.unitsPerFloor || null;
+    const buildYearText = ad.buildYear ? `سال ساخت ${ad.buildYear}` : null;
+
+    const mainSpecs: string[] = [];
+    mainSpecs.push(`• موقعیت: ${escapeHtml(locationText)}`);
+
+    if (ad.area > 0 && ad.landArea && ad.landArea > 0) {
+      mainSpecs.push(`• زیربنا: ${ad.area} متر مربع | متراژ زمین: ${ad.landArea} متر مربع`);
+    } else if (ad.area > 0) {
+      mainSpecs.push(`• زیربنا: ${ad.area} متر مربع`);
+    } else if (ad.landArea && ad.landArea > 0) {
+      mainSpecs.push(`• متراژ زمین: ${ad.landArea} متر مربع`);
+    }
+
+    if (floorInfo && unitsInfo) {
+      mainSpecs.push(`• طبقه: ${escapeHtml(floorInfo)} | واحد: ${escapeHtml(unitsInfo)}`);
+    } else if (floorInfo) {
+      mainSpecs.push(`• طبقه: ${escapeHtml(floorInfo)}`);
+    } else if (unitsInfo) {
+      mainSpecs.push(`• واحد: ${escapeHtml(unitsInfo)}`);
+    }
+
+    if (bedText && buildYearText) {
+      mainSpecs.push(`• تعداد خواب: ${escapeHtml(bedText)} | ${escapeHtml(buildYearText)}`);
+    } else if (bedText) {
+      mainSpecs.push(`• تعداد خواب: ${escapeHtml(bedText)}`);
+    } else if (buildYearText) {
+      mainSpecs.push(`• ${escapeHtml(buildYearText)}`);
+    }
+
+    if (ad.evacuationStatus) {
+      mainSpecs.push(`• وضعیت تخلیه: ${escapeHtml(ad.evacuationStatus)}`);
+    }
+    if (ad.maxTenants) {
+      mainSpecs.push(`• نفرات: ${escapeHtml(ad.maxTenants)}`);
+    }
+
+    // Dynamic engineering & amenities
+    const engineeringLines: string[] = [];
+
+    if (ad.entrance && ad.yard) {
+      engineeringLines.push(`• ورودی: ${escapeHtml(ad.entrance)} | حیاط: ${escapeHtml(ad.yard)}`);
+    } else if (ad.yard) {
+      engineeringLines.push(`• حیاط: ${escapeHtml(ad.yard)}`);
+    } else if (ad.entrance) {
+      engineeringLines.push(`• ورودی: ${escapeHtml(ad.entrance)}`);
+    }
+
+    const amenityParts: string[] = [];
+    if (ad.specs.parking === true) amenityParts.push('پارکینگ: دارد');
+    else if (ad.specs.parking === false) amenityParts.push('پارکینگ: ندارد');
+
+    if (ad.specs.elevator === true) amenityParts.push('آسانسور: دارد');
+    else if (ad.specs.elevator === false) amenityParts.push('آسانسور: ندارد');
+
+    if (ad.specs.storage === true) amenityParts.push('انباری: دارد');
+    else if (ad.specs.storage === false) amenityParts.push('انباری: ندارد');
+
+    if (ad.specs.balcony === true) amenityParts.push('بالکن: دارد');
+    else if (ad.specs.balcony === false) amenityParts.push('بالکن: ندارد');
+
+    if (amenityParts.length > 0) {
+      engineeringLines.push(`• ${amenityParts.join(' | ')}`);
+    }
 
     const hvac = formatHvacFa(ad.specs.cooling, ad.specs.heating);
+    if (hvac) {
+      engineeringLines.push(`• تاسیسات: ${escapeHtml(hvac)}`);
+    }
+
     const cabinet = formatCabinetFa(ad.specs.cabinet);
-    const flooring = ad.flooring || 'سرامیک';
+    const flooringText = ad.flooring || null;
+    if (cabinet && flooringText) {
+      engineeringLines.push(`• کابینت: ${escapeHtml(cabinet)} | کف: ${escapeHtml(flooringText)}`);
+    } else if (cabinet) {
+      engineeringLines.push(`• کابینت: ${escapeHtml(cabinet)}`);
+    } else if (flooringText) {
+      engineeringLines.push(`• کف: ${escapeHtml(flooringText)}`);
+    }
+
+    if (ad.closet) {
+      engineeringLines.push(`• کمد دیواری: ${escapeHtml(ad.closet)}`);
+    }
 
     // Truncate description smartly for photo caption budget
     const cleanDesc = (ad.description || '')
       .replace(/\r?\n+/g, ' ')
       .replace(/[\u200B-\u200D\uFEFF]/g, '')
       .trim();
-    const shortDesc = cleanDesc.length > 90 ? cleanDesc.slice(0, 87) + '...' : (cleanDesc || 'ملک با موقعیت عالی و دسترسی مناسب');
 
     const rahnFormatted = formatPriceExactFa(ad.credit);
     const rentFormatted = ad.rent > 0 ? formatPriceExactFa(ad.rent) : 'رهن کامل';
-    const tabdil = ad.isConvertible ? 'دارد (قابل تبدیل)' : 'ندارد';
 
-    const districtTag = sanitizeHashtag(district);
-    const propTag = sanitizeHashtag(propType);
-    const bedTag = sanitizeHashtag(bedText);
+    const tags: string[] = [];
+    tags.push(`#${sanitizeHashtag(ad.cityPersian || 'علی_آباد_کتول')}`);
+    if (district) tags.push(`#${sanitizeHashtag(district)}`);
+    tags.push('#اجاره', '#رهن_و_اجاره');
+    if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
+    if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
+    tags.push('#املاک_امیران', '#علی_آباد_ملک');
 
     captionLines = [
       `🏠 <b>[نوع ملک: ${escapeHtml(propType)}]</b>`,
+      `━━━━━━━━━━━━━━━━━━`,
       `📋 <b>مشخصات اصلی:</b>`,
-      `• موقعیت: ${escapeHtml(locationText)}`,
-      `• زیربنا: ${ad.area || '—'} متر مربع`,
-      `• طبقه: ${escapeHtml(floorInfo)} | واحد: ${escapeHtml(unitsInfo)}`,
-      `• تعداد خواب: ${escapeHtml(bedText)} | سال ساخت: ${escapeHtml(buildYearText)}`,
-      `• وضعیت تخلیه: ${escapeHtml(evacText)}`,
-      `• نفرات: ${escapeHtml(tenantsText)}`,
-      ``,
-      `✨ <b>امکانات و تجهیزات:</b>`,
-      `• ورودی: ${escapeHtml(ad.entrance || 'مشترک')} | حیاط: ${escapeHtml(ad.yard || 'مشاع')}`,
-      `• پارکینگ: ${amenityText(ad.specs.parking)} | آسانسور: ${amenityText(ad.specs.elevator)} | انباری: ${amenityText(ad.specs.storage)} | بالکن: ${amenityText(ad.specs.balcony)}`,
-      `• گرمایش/سرمایش: ${escapeHtml(hvac)}`,
-      `• کابینت: ${escapeHtml(cabinet)} | کف: ${escapeHtml(flooring)}`,
-      `• کمد دیواری: ${escapeHtml(ad.closet || 'دارد')} | انشعابات: مستقل`,
-      ``,
-      `📄 <b>توضیحات تکمیلی:</b>`,
-      `<i>${escapeHtml(shortDesc)}</i>`,
-      ``,
+      ...mainSpecs
+    ];
+
+    if (engineeringLines.length > 0) {
+      captionLines.push(
+        `━━━━━━━━━━━━━━━━━━`,
+        `✨ <b>مشخصات و امکانات:</b>`,
+        ...engineeringLines
+      );
+    }
+
+    if (cleanDesc.length > 0) {
+      const shortDesc = cleanDesc.length > 120 ? cleanDesc.slice(0, 117) + '...' : cleanDesc;
+      captionLines.push(
+        `━━━━━━━━━━━━━━━━━━`,
+        `📄 <b>توضیحات آگهی:</b>`,
+        `<i>${escapeHtml(shortDesc)}</i>`
+      );
+    }
+
+    captionLines.push(
+      `━━━━━━━━━━━━━━━━━━`,
       `💰 <b>شرایط رهن و اجاره:</b>`,
       `• مبلغ رهن: <b>${rahnFormatted}</b>`,
-      `• مبلغ اجاره: <b>${rentFormatted}</b>`,
-      `• قابلیت تبدیل: ${tabdil}`,
-      ``,
-      `🏷 #${sanitizeHashtag(ad.cityPersian || 'علی_آباد_کتول')}${districtTag ? ' #' + districtTag : ''} #اجاره #رهن_و_اجاره #${propTag} #${bedTag} #املاک_امیران #علی_آباد_ملک`,
-      ``,
+      `• مبلغ اجاره: <b>${rentFormatted}</b>`
+    );
+    if (ad.isConvertible) {
+      captionLines.push(`• قابلیت تبدیل: دارد (قابل تبدیل)`);
+    }
+
+    captionLines.push(
+      `━━━━━━━━━━━━━━━━━━`,
+      `🏷 ${tags.join(' ')}`,
+      `━━━━━━━━━━━━━━━━━━`,
       `📞 <b>ارتباط با ما:</b>`,
       `📱 همراه: 09922434338`,
       `☎️ تلفن دفتر: 01734241371`,
       `📍 آدرس دفتر: علی‌آباد کتول، خیابان پاسداران (کمربندی قدیم)، نبش پاسداران ۸، املاک امیران`,
       `🔗 عضویت در کانال: @aliabadmelk`
-    ];
+    );
   } else {
     // ----------------- SALE TEMPLATE -----------------
-    const propType = ad.propertyTypeFa || 'آپارتمان مسکونی';
-    const bedText = ad.bedrooms !== null && ad.bedrooms !== undefined ? (ad.bedrooms === 0 ? 'بدون خواب' : `${ad.bedrooms} خواب`) : '۲ خواب';
-    const floorInfo = ad.floorText ? ad.floorText : (ad.floorNumber !== null ? `طبقه ${ad.floorNumber}` : 'طبقه ۱');
-    const unitsInfo = ad.unitsPerFloor || 'تک واحدی';
-    const buildYearText = ad.buildYear ? `${ad.buildYear}` : 'نوساز / کلید نخورده';
-    const deedText = ad.deedStatus || 'تک‌برگ / شش‌دانگ';
+    const propType = ad.propertyTypeFa || 'ملک مسکونی';
+    const bedText = ad.bedrooms !== null && ad.bedrooms !== undefined
+      ? (ad.bedrooms === 0 ? 'بدون خواب' : `${ad.bedrooms} خواب`)
+      : null;
+    const floorInfo = ad.floorText ? ad.floorText : (ad.floorNumber !== null && ad.floorNumber !== undefined ? `طبقه ${ad.floorNumber}` : null);
+    const unitsInfo = ad.unitsPerFloor || null;
+    const buildYearText = ad.buildYear ? `سال ساخت ${ad.buildYear}` : null;
+
+    const mainSpecs: string[] = [];
+    mainSpecs.push(`• موقعیت: ${escapeHtml(locationText)}`);
+
+    if (ad.area > 0 && ad.landArea && ad.landArea > 0) {
+      mainSpecs.push(`• زیربنا: ${ad.area} متر مربع | متراژ زمین: ${ad.landArea} متر مربع`);
+    } else if (ad.area > 0) {
+      mainSpecs.push(`• زیربنا: ${ad.area} متر مربع`);
+    } else if (ad.landArea && ad.landArea > 0) {
+      mainSpecs.push(`• متراژ زمین: ${ad.landArea} متر مربع`);
+    }
+
+    if (floorInfo && unitsInfo) {
+      mainSpecs.push(`• طبقه: ${escapeHtml(floorInfo)} | واحد: ${escapeHtml(unitsInfo)}`);
+    } else if (floorInfo) {
+      mainSpecs.push(`• طبقه: ${escapeHtml(floorInfo)}`);
+    } else if (unitsInfo) {
+      mainSpecs.push(`• واحد: ${escapeHtml(unitsInfo)}`);
+    }
+
+    if (bedText && buildYearText) {
+      mainSpecs.push(`• تعداد خواب: ${escapeHtml(bedText)} | ${escapeHtml(buildYearText)}`);
+    } else if (bedText) {
+      mainSpecs.push(`• تعداد خواب: ${escapeHtml(bedText)}`);
+    } else if (buildYearText) {
+      mainSpecs.push(`• ${escapeHtml(buildYearText)}`);
+    }
+
+    if (ad.deedStatus) {
+      mainSpecs.push(`• وضعیت سند: ${escapeHtml(ad.deedStatus)}`);
+    }
+
+    // Dynamic engineering & amenities
+    const engineeringLines: string[] = [];
+
+    const amenityParts: string[] = [];
+    if (ad.specs.parking === true) amenityParts.push('پارکینگ: دارد');
+    else if (ad.specs.parking === false) amenityParts.push('پارکینگ: ندارد');
+
+    if (ad.specs.elevator === true) amenityParts.push('آسانسور: دارد');
+    else if (ad.specs.elevator === false) amenityParts.push('آسانسور: ندارد');
+
+    if (ad.specs.storage === true) amenityParts.push('انباری: دارد');
+    else if (ad.specs.storage === false) amenityParts.push('انباری: ندارد');
+
+    if (ad.specs.balcony === true) amenityParts.push('بالکن: دارد');
+    else if (ad.specs.balcony === false) amenityParts.push('بالکن: ندارد');
+
+    if (amenityParts.length > 0) {
+      engineeringLines.push(`• ${amenityParts.join(' | ')}`);
+    }
 
     const directionText = formatDirectionFa(ad.specs.direction);
-    const facadeText = ad.buildingFacade || 'سنگ نما';
-    const flooring = ad.flooring || 'سرامیک';
+    const facadeText = ad.buildingFacade || null;
+    if (directionText && facadeText) {
+      engineeringLines.push(`• جهت: ${escapeHtml(directionText)} | نما: ${escapeHtml(facadeText)}`);
+    } else if (directionText) {
+      engineeringLines.push(`• جهت: ${escapeHtml(directionText)}`);
+    } else if (facadeText) {
+      engineeringLines.push(`• نما: ${escapeHtml(facadeText)}`);
+    }
+
     const skeletonText = formatSkeletonFa(ad.specs.skeleton);
+    const flooringText = ad.flooring || null;
+    if (skeletonText && flooringText) {
+      engineeringLines.push(`• اسکلت: ${escapeHtml(skeletonText)} | کف: ${escapeHtml(flooringText)}`);
+    } else if (skeletonText) {
+      engineeringLines.push(`• اسکلت: ${escapeHtml(skeletonText)}`);
+    } else if (flooringText) {
+      engineeringLines.push(`• کف: ${escapeHtml(flooringText)}`);
+    }
+
     const hvac = formatHvacFa(ad.specs.cooling, ad.specs.heating);
+    if (hvac) {
+      engineeringLines.push(`• تاسیسات: ${escapeHtml(hvac)}`);
+    }
+
     const cabinet = formatCabinetFa(ad.specs.cabinet);
-    const loanText = ad.loanStatus || 'بدون وام / قابلیت دریافت وام';
+    const closet = ad.closet || null;
+    if (cabinet && closet) {
+      engineeringLines.push(`• کابینت: ${escapeHtml(cabinet)} | کمد دیواری: ${escapeHtml(closet)}`);
+    } else if (cabinet) {
+      engineeringLines.push(`• کابینت: ${escapeHtml(cabinet)}`);
+    } else if (closet) {
+      engineeringLines.push(`• کمد دیواری: ${escapeHtml(closet)}`);
+    }
+
+    if (ad.entrance && ad.yard) {
+      engineeringLines.push(`• ورودی: ${escapeHtml(ad.entrance)} | حیاط: ${escapeHtml(ad.yard)}`);
+    } else if (ad.yard) {
+      engineeringLines.push(`• حیاط: ${escapeHtml(ad.yard)}`);
+    } else if (ad.entrance) {
+      engineeringLines.push(`• ورودی: ${escapeHtml(ad.entrance)}`);
+    }
+
+    if (ad.loanStatus) {
+      engineeringLines.push(`• وضعیت وام: ${escapeHtml(ad.loanStatus)}`);
+    }
 
     const cleanDesc = (ad.description || '')
       .replace(/\r?\n+/g, ' ')
       .replace(/[\u200B-\u200D\uFEFF]/g, '')
       .trim();
-    const shortDesc = cleanDesc.length > 90 ? cleanDesc.slice(0, 87) + '...' : (cleanDesc || 'فرصت عالی جهت سرمایه‌گذاری و سکونت');
 
     const totalPriceText = formatPriceExactFa(ad.totalPrice);
-    const pricePerM2Text = ad.pricePerM2 > 0 ? formatPriceExactFa(ad.pricePerM2) : 'توافقی';
+    const pricePerM2Text = ad.pricePerM2 > 0 ? formatPriceExactFa(ad.pricePerM2) : null;
 
-    const districtTag = sanitizeHashtag(district);
-    const propTag = sanitizeHashtag(propType);
-    const bedTag = sanitizeHashtag(bedText);
+    const tags: string[] = [];
+    tags.push(`#${sanitizeHashtag(ad.cityPersian || 'علی_آباد_کتول')}`);
+    if (district) tags.push(`#${sanitizeHashtag(district)}`);
+    tags.push('#فروش');
+    if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
+    if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
+    tags.push('#املاک_امیران', '#علی_آباد_ملک');
 
     captionLines = [
       `🏠 <b>[نوع ملک: ${escapeHtml(propType)}]</b>`,
       `━━━━━━━━━━━━━━━━━━`,
       `📋 <b>مشخصات اصلی:</b>`,
-      `• موقعیت: ${escapeHtml(locationText)}`,
-      `• زیربنا: ${ad.area || '—'} متر مربع${ad.landArea ? ` | متراژ زمین: ${ad.landArea} متر` : ''}`,
-      `• طبقه: ${escapeHtml(floorInfo)} | واحد: ${escapeHtml(unitsInfo)}`,
-      `• تعداد خواب: ${escapeHtml(bedText)} | سال ساخت: ${escapeHtml(buildYearText)}`,
-      `• وضعیت سند: ${escapeHtml(deedText)}`,
-      ``,
-      `✨ <b>مشخصات مهندسی و امکانات:</b>`,
-      `• جهت: ${escapeHtml(directionText)} | نما: ${escapeHtml(facadeText)}`,
-      `• اسکلت: ${escapeHtml(skeletonText)} | کف: ${escapeHtml(flooring)}`,
-      `• تاسیسات: ${escapeHtml(hvac)}`,
-      `• کابینت: ${escapeHtml(cabinet)} | انشعابات: مستقل`,
-      `• پارکینگ: ${amenityText(ad.specs.parking)} | آسانسور: ${amenityText(ad.specs.elevator)} | انباری: ${amenityText(ad.specs.storage)} | بالکن: ${amenityText(ad.specs.balcony)}`,
-      `• وضعیت وام: ${escapeHtml(loanText)}`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `📄 <b>توضیحات تکمیلی:</b>`,
-      `<i>${escapeHtml(shortDesc)}</i>`,
+      ...mainSpecs
+    ];
+
+    if (engineeringLines.length > 0) {
+      captionLines.push(
+        `━━━━━━━━━━━━━━━━━━`,
+        `✨ <b>مشخصات مهندسی و امکانات:</b>`,
+        ...engineeringLines
+      );
+    }
+
+    if (cleanDesc.length > 0) {
+      const shortDesc = cleanDesc.length > 120 ? cleanDesc.slice(0, 117) + '...' : cleanDesc;
+      captionLines.push(
+        `━━━━━━━━━━━━━━━━━━`,
+        `📄 <b>توضیحات آگهی:</b>`,
+        `<i>${escapeHtml(shortDesc)}</i>`
+      );
+    }
+
+    captionLines.push(
       `━━━━━━━━━━━━━━━━━━`,
       `💰 <b>شرایط قیمت:</b>`,
-      `• قیمت کل: <b>${totalPriceText}</b>`,
-      `• قیمت هر متر: <b>${pricePerM2Text}</b>`,
+      `• قیمت کل: <b>${totalPriceText}</b>`
+    );
+    if (pricePerM2Text) {
+      captionLines.push(`• قیمت هر متر: <b>${pricePerM2Text}</b>`);
+    }
+
+    captionLines.push(
       `━━━━━━━━━━━━━━━━━━`,
-      `🏷 #${sanitizeHashtag(ad.cityPersian || 'علی_آباد_کتول')}${districtTag ? ' #' + districtTag : ''} #فروش #${propTag} #${bedTag} #املاک_امیران #علی_آباد_ملک`,
+      `🏷 ${tags.join(' ')}`,
       `━━━━━━━━━━━━━━━━━━`,
       `📞 <b>ارتباط با ما:</b>`,
       `📱 همراه: 09922434338`,
       `☎️ تلفن دفتر: 01734241371`,
       `📍 آدرس دفتر: علی‌آباد کتول، خیابان پاسداران (کمربندی قدیم)، نبش پاسداران ۸، املاک امیران`,
       `🔗 عضویت در کانال: @aliabadmelk`
-    ];
+    );
   }
 
   // Ensure total length strictly adheres to Telegram photo caption limit (1024 characters)

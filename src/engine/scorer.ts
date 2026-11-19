@@ -101,10 +101,10 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   // 1. Property Type
   if (/(مغازه|تجاری|خدماتی|دفتر\s*کار)/.test(norm) || (categorySlug && categorySlug.includes('commercial'))) {
     attrs.propertyTypeFa = /مغازه/.test(norm) ? 'مغازه' : 'تجاری خدماتی';
-  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس)/.test(norm) || (categorySlug && categorySlug.includes('villa'))) {
+  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس|ویلا\s*باغ)/.test(norm) || (categorySlug && (categorySlug.includes('villa') || categorySlug.includes('house-villa')))) {
     attrs.propertyTypeFa = 'ویلایی';
-  } else if (/(زمین|کلنگی|مستغلات|چهاردیواری)/.test(norm) || (categorySlug && categorySlug.includes('land'))) {
-    attrs.propertyTypeFa = 'زمین کلنگی';
+  } else if (/(زمین|کلنگی|مستغلات|چهاردیواری|باغ|کشاورزی|مزرعه)/.test(norm) || (categorySlug && (categorySlug.includes('land') || categorySlug.includes('plot')))) {
+    attrs.propertyTypeFa = 'زمین / کلنگی';
   } else {
     attrs.propertyTypeFa = 'آپارتمان مسکونی';
   }
@@ -120,6 +120,9 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   else if (/شش\s*دانگ/.test(norm)) attrs.deedStatus = 'شش‌دانگ';
   else if (/قولنامه/.test(norm)) attrs.deedStatus = 'قولنامه‌ای با کد رهگیری';
   else if (/وکالتی/.test(norm)) attrs.deedStatus = 'وکالتی محضری';
+  else if (/سند\s*دار|دارای\s*سند|سند\s*رسمی|سند\s*آزاد/.test(norm)) attrs.deedStatus = 'دارای سند رسمی';
+  else if (/سند\s*شورایی/.test(norm)) attrs.deedStatus = 'سند شورایی';
+  else if (/سند\s*مشاع/.test(norm)) attrs.deedStatus = 'سند مشاع';
 
   // 4. Facade (نوع نما)
   if (/نما\s*رومی/.test(norm)) attrs.buildingFacade = 'سنگ رومی کلاسیک';
