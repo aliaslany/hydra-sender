@@ -10,192 +10,316 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   <style>
     :root {
       --bg: #f8fafc;
+      --bg-gradient: radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(14, 165, 233, 0.05) 0px, transparent 50%);
       --surface: #ffffff;
+      --surface-card: #ffffff;
       --surface-subtle: #f1f5f9;
       --surface-hover: #e2e8f0;
+      --surface-active: #cbd5e1;
       --text: #0f172a;
+      --text-secondary: #334155;
       --text-muted: #64748b;
       --border: #e2e8f0;
       --border-focus: #3b82f6;
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
       --primary-light: #eff6ff;
+      --primary-glow: rgba(37, 99, 235, 0.25);
       --success: #16a34a;
       --success-light: #dcfce7;
       --warn: #d97706;
       --warn-light: #fef3c7;
       --danger: #dc2626;
       --danger-light: #fee2e2;
-      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-      --card-shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-      --badge-bg: #f1f5f9;
-      --badge-text: #475569;
       --sheypoor: #0284c7;
       --sheypoor-light: #e0f2fe;
-      --divar: #dc2626;
-      --divar-light: #fee2e2;
-      --header-bg: rgba(255, 255, 255, 0.92);
-      --dialog-backdrop: rgba(15, 23, 42, 0.6);
+      --divar: #e11d48;
+      --divar-light: #ffe4e6;
+      --card-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+      --card-shadow-hover: 0 16px 28px -4px rgba(15, 23, 42, 0.1), 0 6px 12px -2px rgba(15, 23, 42, 0.05);
+      --input-bg: #ffffff;
+      --header-bg: rgba(255, 255, 255, 0.88);
+      --dialog-backdrop: rgba(15, 23, 42, 0.65);
+      --code-bg: #f1f5f9;
+      --code-text: #0f172a;
+      --badge-muted-bg: #f1f5f9;
+      --badge-muted-text: #475569;
     }
     [data-theme="dark"] {
       --bg: #090d16;
-      --surface: #131b2e;
+      --bg-gradient: radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.07) 0px, transparent 50%);
+      --surface: #111827;
+      --surface-card: #151f32;
       --surface-subtle: #0f172a;
       --surface-hover: #1e293b;
+      --surface-active: #334155;
       --text: #f8fafc;
+      --text-secondary: #cbd5e1;
       --text-muted: #94a3b8;
       --border: #26334d;
       --border-focus: #38bdf8;
       --primary: #38bdf8;
       --primary-hover: #0284c7;
       --primary-light: #082f49;
-      --success: #22c55e;
-      --success-light: #14532d;
-      --warn: #f59e0b;
-      --warn-light: #451a03;
-      --danger: #ef4444;
-      --danger-light: #7f1d1d;
-      --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-      --card-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.6);
-      --badge-bg: #1e293b;
-      --badge-text: #94a3b8;
+      --primary-glow: rgba(56, 189, 248, 0.35);
+      --success: #34d399;
+      --success-light: rgba(16, 185, 129, 0.16);
+      --warn: #fbbf24;
+      --warn-light: rgba(245, 158, 11, 0.16);
+      --danger: #f87171;
+      --danger-light: rgba(239, 68, 68, 0.16);
       --sheypoor: #38bdf8;
-      --sheypoor-light: #082f49;
-      --divar: #f87171;
-      --divar-light: #450a0a;
-      --header-bg: rgba(19, 27, 46, 0.92);
-      --dialog-backdrop: rgba(0, 0, 0, 0.75);
+      --sheypoor-light: rgba(56, 189, 248, 0.16);
+      --divar: #fb7185;
+      --divar-light: rgba(244, 63, 94, 0.16);
+      --card-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.5);
+      --card-shadow-hover: 0 20px 36px -4px rgba(0, 0, 0, 0.65);
+      --input-bg: #0f172a;
+      --header-bg: rgba(17, 24, 39, 0.88);
+      --dialog-backdrop: rgba(0, 0, 0, 0.85);
+      --code-bg: #0f172a;
+      --code-text: #38bdf8;
+      --badge-muted-bg: #1e293b;
+      --badge-muted-text: #94a3b8;
     }
-    * { box-sizing: border-box; font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif; }
-    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; transition: background 0.2s ease, color 0.2s ease; }
+    * {
+      box-sizing: border-box;
+      font-family: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    html, body {
+      margin: 0; padding: 0; min-height: 100vh;
+      background: var(--bg); background-image: var(--bg-gradient);
+      color: var(--text); line-height: 1.6;
+      transition: background-color 0.25s ease, color 0.25s ease;
+      -webkit-font-smoothing: antialiased;
+    }
     header {
-      background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-      border-bottom: 1px solid var(--border); padding: 0.85rem 1.5rem;
+      background: var(--header-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border); padding: 0.85rem 1.75rem;
       display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;
-      position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      transition: background-color 0.25s ease, border-color 0.25s ease;
     }
-    header h1 { margin: 0; font-size: 1.25rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
+    header h1 {
+      margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--text);
+      display: flex; align-items: center; gap: 0.6rem;
+      background: linear-gradient(135deg, var(--primary), #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
     .header-controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .theme-toggle-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 1.15rem; cursor: pointer;
+      width: 38px; height: 38px; padding: 0; border-radius: 50%; font-size: 1.15rem; cursor: pointer;
       background: var(--surface-subtle); border: 1px solid var(--border); color: var(--text);
-      transition: all 0.2s ease;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .theme-toggle-btn:hover { background: var(--surface-hover); transform: scale(1.08); }
+    .theme-toggle-btn:hover {
+      background: var(--surface-hover); transform: rotate(45deg) scale(1.08);
+      border-color: var(--primary);
+    }
     nav[role="tablist"] {
-      display: flex; gap: 0.25rem; background: var(--surface);
-      padding: 0.4rem 1.5rem; border-bottom: 1px solid var(--border); overflow-x: auto;
+      display: flex; gap: 0.35rem; background: var(--surface);
+      padding: 0.5rem 1.75rem; border-bottom: 1px solid var(--border);
+      overflow-x: auto; scrollbar-width: none;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
     }
+    nav[role="tablist"]::-webkit-scrollbar { display: none; }
     nav[role="tablist"] button {
       background: transparent; border: none; border-bottom: 3px solid transparent;
-      padding: 0.65rem 1rem; cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.9rem;
-      white-space: nowrap; transition: all 0.15s ease;
+      padding: 0.65rem 1.1rem; cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.92rem;
+      white-space: nowrap; border-radius: 0.5rem 0.5rem 0 0;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     nav[role="tablist"] button[aria-selected="true"] {
       color: var(--primary); border-bottom-color: var(--primary);
+      background: var(--primary-light);
     }
-    nav[role="tablist"] button:hover { color: var(--text); }
-    main { max-width: 1280px; margin: 1.25rem auto; padding: 0 1.25rem; }
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    nav[role="tablist"] button:hover {
+      color: var(--text); background: var(--surface-hover);
+    }
+    main {
+      max-width: 1320px; margin: 1.5rem auto; padding: 0 1.5rem;
+    }
+    #main-content > div {
+      animation: tabEntrance 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes tabEntrance {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.1rem; margin-bottom: 1.5rem;
+    }
     .card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
-      padding: 1.25rem; margin-bottom: 1.25rem; box-shadow: var(--card-shadow); transition: box-shadow 0.2s ease;
+      background: var(--surface-card); border: 1px solid var(--border); border-radius: 0.85rem;
+      padding: 1.35rem; margin-bottom: 1.35rem; box-shadow: var(--card-shadow);
+      position: relative; overflow: hidden;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .card:hover { box-shadow: var(--card-shadow-hover); }
-    .kpi-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
-    .kpi-val { font-size: 1.85rem; font-weight: 800; color: var(--primary); margin-top: 0.25rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    th, td { padding: 0.75rem 0.65rem; border-bottom: 1px solid var(--border); text-align: right; }
-    th { background: var(--surface-subtle); font-weight: 600; color: var(--text); }
+    .card:hover {
+      box-shadow: var(--card-shadow-hover);
+      border-color: rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+    .kpi-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--primary), #818cf8);
+    }
+    .kpi-card:nth-child(2)::before { background: linear-gradient(90deg, #10b981, #06b6d4); }
+    .kpi-card:nth-child(3)::before { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+    .kpi-card:nth-child(4)::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+    .kpi-card:nth-child(5)::before { background: linear-gradient(90deg, #3b82f6, #10b981); }
+    .kpi-title { font-size: 0.84rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.35rem; }
+    .kpi-val { font-size: 2rem; font-weight: 800; color: var(--text); letter-spacing: -0.02em; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
+    th, td { padding: 0.8rem 0.85rem; text-align: right; }
+    th {
+      background: var(--surface-subtle); font-weight: 700; color: var(--text-secondary);
+      border-bottom: 2px solid var(--border); font-size: 0.82rem;
+    }
+    th:first-child { border-top-right-radius: 0.5rem; }
+    th:last-child { border-top-left-radius: 0.5rem; }
+    td { border-bottom: 1px solid var(--border); color: var(--text); }
     tr:hover td { background: var(--surface-hover); }
     .btn {
-      background: var(--primary); color: #fff; border: none; border-radius: 0.45rem;
-      padding: 0.5rem 0.95rem; cursor: pointer; font-size: 0.85rem; font-weight: 600;
-      display: inline-flex; align-items: center; gap: 0.35rem; transition: all 0.15s ease;
+      background: var(--primary); color: #fff; border: none; border-radius: 0.5rem;
+      padding: 0.55rem 1rem; cursor: pointer; font-size: 0.85rem; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 2px 4px var(--primary-glow);
     }
-    .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    .btn:hover { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 4px 8px var(--primary-glow); }
+    .btn:active { transform: translateY(0); }
+    .btn-outline {
+      background: transparent; color: var(--primary); border: 1.5px solid var(--primary);
+      box-shadow: none;
+    }
     .btn-outline:hover { background: var(--primary-light); }
-    .btn-sm { padding: 0.25rem 0.55rem; font-size: 0.78rem; border-radius: 0.35rem; }
-    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; border-radius: 0.4rem; }
+    .btn-danger { background: var(--danger); color: #fff; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25); }
     .btn-danger:hover { background: #b91c1c; }
-    .btn-success { background: var(--success); color: #fff; }
+    .btn-success { background: var(--success); color: #fff; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.25); }
     .btn-success:hover { background: #15803d; }
-    .badge { padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; display: inline-block; white-space: nowrap; }
-    .badge-live { background: var(--success-light); color: var(--success); }
-    .badge-backfill { background: var(--warn-light); color: var(--warn); }
-    .badge-warn { background: var(--warn-light); color: var(--warn); }
-    .badge-danger { background: var(--danger-light); color: var(--danger); }
-    .badge-muted { background: var(--badge-bg); color: var(--badge-text); }
-    .badge-sheypoor { background: var(--sheypoor-light); color: var(--sheypoor); border: 1px solid var(--sheypoor); }
-    .badge-divar { background: var(--divar-light); color: var(--divar); border: 1px solid var(--divar); }
+    .badge {
+      padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.74rem; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap;
+    }
+    .badge-live { background: var(--success-light); color: var(--success); border: 1px solid var(--success); }
+    .badge-backfill { background: var(--warn-light); color: var(--warn); border: 1px solid var(--warn); }
+    .badge-warn { background: var(--warn-light); color: var(--warn); border: 1px solid var(--warn); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-muted { background: var(--badge-muted-bg); color: var(--badge-muted-text); border: 1px solid var(--border); }
+    .badge-sheypoor { background: var(--sheypoor-light); color: var(--sheypoor); border: 1.5px solid var(--sheypoor); font-weight: 800; }
+    .badge-divar { background: var(--divar-light); color: var(--divar); border: 1.5px solid var(--divar); font-weight: 800; }
     dialog {
       background: var(--surface); color: var(--text);
-      border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.5rem;
-      max-width: 780px; width: 95%; max-height: 90vh; overflow-y: auto;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35);
+      border: 1px solid var(--border); border-radius: 0.85rem; padding: 1.75rem;
+      max-width: 800px; width: 95%; max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    dialog::backdrop { background: var(--dialog-backdrop); backdrop-filter: blur(3px); }
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 1rem; }
+    dialog[open] { animation: modalEntrance 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes modalEntrance {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    dialog::backdrop { background: var(--dialog-backdrop); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.95rem; margin-bottom: 1rem; }
     @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
-    .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
-    .form-group label { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
+    .form-group label { font-size: 0.84rem; font-weight: 700; color: var(--text); }
     input, select, textarea {
-      padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 0.45rem;
-      font-size: 0.875rem; background: var(--surface); color: var(--text); transition: border-color 0.15s ease;
+      padding: 0.6rem 0.8rem; border: 1.5px solid var(--border); border-radius: 0.5rem;
+      font-size: 0.875rem; background: var(--input-bg); color: var(--text);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+    code {
+      background: var(--code-bg); color: var(--code-text);
+      padding: 0.15rem 0.4rem; border-radius: 0.35rem; font-size: 0.82rem; font-family: monospace;
+      border: 1px solid var(--border);
+    }
     #toast-region {
-      position: fixed; bottom: 1.25rem; left: 1.25rem; background: #0f172a; color: #fff;
-      padding: 0.75rem 1.25rem; border-radius: 0.5rem; display: none; z-index: 99999;
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); font-size: 0.875rem;
+      position: fixed; bottom: 1.5rem; left: 1.5rem; background: #0f172a; color: #fff;
+      padding: 0.85rem 1.4rem; border-radius: 0.6rem; display: none; z-index: 99999;
+      box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.35); font-size: 0.88rem; font-weight: 600;
+      animation: tabEntrance 0.25s ease-out;
     }
     .telegram-card-preview {
-      background: #182533; color: #f5f5f5; border-radius: 0.6rem; padding: 1.25rem;
+      background: #182533; color: #f5f5f5; border-radius: 0.75rem; padding: 1.35rem;
       font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif; line-height: 1.7; white-space: pre-wrap;
       direction: rtl; text-align: right; margin-top: 1rem; border: 1px solid #2b3b4d; font-size: 0.9rem;
     }
     .telegram-btn-preview {
       display: inline-block; background: #2b5278; color: #fff; text-decoration: none;
-      padding: 0.5rem 1rem; border-radius: 0.375rem; margin-top: 0.75rem; font-size: 0.85rem; font-weight: 600;
+      padding: 0.55rem 1rem; border-radius: 0.45rem; margin-top: 0.75rem; font-size: 0.85rem; font-weight: 700;
+      transition: background 0.15s ease;
     }
+    .telegram-btn-preview:hover { background: #3b6b99; }
     .score-box {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 48px; height: 48px; border-radius: 50%; font-weight: 700; font-size: 1.1rem;
+      width: 52px; height: 52px; border-radius: 50%; font-weight: 800; font-size: 1.15rem;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     }
-    .score-box.pass { background: var(--success-light); color: var(--success); }
-    .score-box.fail { background: var(--danger-light); color: var(--danger); }
-    .actions-cell { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
-    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
-    #rule-map, #sim-map { height: 260px; width: 100%; border-radius: 0.5rem; border: 1px solid var(--border); margin-top: 0.35rem; z-index: 1; }
-    .map-controls-bar { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 0.35rem; }
-    /* Live Activity Feed Styles */
+    .score-box.pass { background: var(--success-light); color: var(--success); border: 2px solid var(--success); }
+    .score-box.fail { background: var(--danger-light); color: var(--danger); border: 2px solid var(--danger); }
+    .actions-cell { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-muted); font-weight: 500; }
+    #rule-map, #sim-map {
+      height: 270px; width: 100%; border-radius: 0.6rem; border: 1px solid var(--border);
+      margin-top: 0.4rem; z-index: 1;
+    }
+    .map-controls-bar { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 0.4rem; }
+    /* Live Activity Feed Styles & Animations */
     .live-pulse-dot {
-      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-      background: #22c55e; box-shadow: 0 0 0 rgba(34, 197, 94, 0.4);
-      animation: pulse-animation 2s infinite;
+      display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+      background: #22c55e; position: relative;
+      animation: pulseGlow 2s infinite;
     }
-    @keyframes pulse-animation {
-      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
-      70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.75); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
       100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
     }
     .activity-row-new {
-      animation: highlight-new-row 2.5s ease-out;
+      animation: newRowFlash 2.5s ease-out;
     }
-    @keyframes highlight-new-row {
-      0% { background: rgba(56, 189, 248, 0.3); }
+    @keyframes newRowFlash {
+      0% { background: rgba(56, 189, 248, 0.35); }
       100% { background: transparent; }
     }
     .filter-chip {
-      padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
-      cursor: pointer; border: 1px solid var(--border); background: var(--surface-subtle); color: var(--text-muted);
-      transition: all 0.15s ease;
+      padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700;
+      cursor: pointer; border: 1.5px solid var(--border); background: var(--surface-subtle); color: var(--text-muted);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .filter-chip:hover {
+      background: var(--surface-hover); color: var(--text); border-color: var(--primary);
     }
     .filter-chip.active {
       background: var(--primary); color: #fff; border-color: var(--primary);
+      box-shadow: 0 2px 6px var(--primary-glow);
     }
+    /* Adaptive UI Box Cards for Forms & Modals */
+    .box-info {
+      background: var(--primary-light); border: 1.5px solid var(--border);
+      border-radius: 0.6rem; padding: 0.95rem; margin-bottom: 1rem;
+    }
+    .box-info h4 { margin: 0 0 0.4rem 0; font-size: 0.9rem; color: var(--primary); font-weight: 700; }
+    .box-danger {
+      background: var(--danger-light); border: 1.5px solid var(--danger);
+      border-radius: 0.6rem; padding: 0.95rem; margin-bottom: 1rem;
+    }
+    .box-danger h4 { margin: 0 0 0.4rem 0; font-size: 0.9rem; color: var(--danger); font-weight: 700; }
+    .box-danger label { color: var(--danger); }
+    .box-neutral {
+      background: var(--surface-subtle); border: 1.5px solid var(--border);
+      border-radius: 0.6rem; padding: 0.95rem; margin-bottom: 1rem;
+    }
+    .box-neutral h4 { margin: 0 0 0.4rem 0; font-size: 0.9rem; color: var(--text); font-weight: 700; }
   </style>
 </head>
 <body>
@@ -260,7 +384,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           <label>کانال تلگرام مقصد (@channel یا شناسه عددی):</label>
           <input type="text" id="r-channel" list="channel-datalist" required placeholder="@aliabadmelk" />
           <datalist id="channel-datalist"></datalist>
-          <small style="color:var(--muted); font-size:0.75rem;">می‌توانید کانال را تایپ کنید یا از کانال‌های متصل انتخاب نمایید.</small>
+          <small style="color:var(--text-muted); font-size:0.75rem;">می‌توانید کانال را تایپ کنید یا از کانال‌های متصل انتخاب نمایید.</small>
         </div>
         <div class="form-group">
           <label>نوع معامله و ملک (Stage 1):</label>
@@ -311,12 +435,12 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       </div>
 
       <!-- Feature 1: Map Polygon Boundary -->
-      <div style="background:#f1f5f9; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #cbd5e1;">
+      <div class="box-neutral">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-          <h4 style="margin:0; font-size:0.9rem; color:#1e293b;">🗺 تعیین محدوده جغرافیایی خط‌کشی‌شده روی نقشه (Polygon):</h4>
+          <h4>🗺 تعیین محدوده جغرافیایی خط‌کشی‌شده روی نقشه (Polygon):</h4>
           <span id="polygon-status-badge" class="badge badge-muted">بدون مرزبندی (کل شهر)</span>
         </div>
-        <p style="font-size:0.8rem; color:var(--muted); margin:0.25rem 0 0.5rem 0;">
+        <p style="font-size:0.8rem; color:var(--text-muted); margin:0.25rem 0 0.5rem 0;">
           روی نقشه کلیک کنید تا رأس‌های محدوده مورد نظر (مانند نقشه دیوار در علی‌آباد کتول و مزرعه کتول) ترسیم شوند.
         </p>
         <div id="rule-map"></div>
@@ -325,14 +449,14 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             <button type="button" class="btn btn-outline btn-sm" onclick="clearRulePolygon()">🗑 حذف مرزبندی</button>
             <button type="button" class="btn btn-outline btn-sm" onclick="centerMapOnAliabad()">🎯 مرکز علی‌آباد کتول</button>
           </div>
-          <span style="font-size:0.75rem; color:var(--muted);">با کلیک مکرر روی نقشه چندضلعی دلخواه خود را رسم کنید.</span>
+          <span style="font-size:0.75rem; color:var(--text-muted);">با کلیک مکرر روی نقشه چندضلعی دلخواه خود را رسم کنید.</span>
         </div>
         <textarea id="r-polygon-json" style="width:100%; height:55px; font-size:0.75rem; font-family:monospace; margin-top:0.4rem; display:none;" placeholder="مختصات چندضلعی [[lat, lon], ...]"></textarea>
       </div>
 
       <!-- Feature 2: Anti-Agency Filter -->
-      <div style="background:#fef2f2; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #fecaca;">
-        <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:#991b1b;">🚫 فیلتر حذف آگهی‌های دلال‌ها، املاک و مشاورین (فقط شخصی مالک):</h4>
+      <div class="box-danger">
+        <h4>🚫 فیلتر حذف آگهی‌های دلال‌ها، املاک و مشاورین (فقط شخصی مالک):</h4>
         <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; font-weight:600; cursor:pointer;">
           <input type="checkbox" id="r-exclude-agency" checked />
           عدم ارسال آگهی‌های دارای کلمات املاک، مشاور، بنگاه، دپارتمان، همکار و... (فقط آگهی‌های شخصی مالک)
@@ -344,8 +468,8 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       </div>
 
       <!-- Feature 3: Stage 2 Features -->
-      <div style="background:#f8fafc; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid var(--border);">
-        <h4 style="margin:0 0 0.5rem 0; font-size:0.88rem; color:#1e293b;">فیلترهای مرحله دوم (امکانات، اسکلت، جهت):</h4>
+      <div class="box-neutral">
+        <h4>فیلترهای مرحله دوم (امکانات، اسکلت، جهت):</h4>
         <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:0.6rem;">
           <label><input type="checkbox" id="r-parking" checked /> پارکینگ الزامی</label>
           <label><input type="checkbox" id="r-elevator" checked /> آسانسور الزامی</label>
@@ -374,9 +498,9 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       </div>
 
       <!-- Feature 4: Telegram Inline Keyboard Buttons -->
-      <div style="background:#eff6ff; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #bfdbfe;">
-        <h4 style="margin:0 0 0.4rem 0; font-size:0.88rem; color:#1e40af;">🔘 دکمه‌های شیشه‌ای زیر پست تلگرام (Inline Buttons):</h4>
-        <p style="font-size:0.78rem; color:#475569; margin:0 0 0.6rem 0;">
+      <div class="box-info">
+        <h4>🔘 دکمه‌های شیشه‌ای زیر پست تلگرام (Inline Buttons):</h4>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.6rem 0;">
           دکمه‌های مورد نظر برای نمایش در انتهای پست‌های ارسالی به کانال تلگرام را انتخاب کنید:
         </p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.6rem;">
@@ -409,7 +533,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   <!-- Channel Add Dialog -->
   <dialog id="channel-dialog">
     <h3 style="margin-top:0;">اتصال کانال تلگرام جدید</h3>
-    <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem;">
+    <p style="font-size:0.85rem; color:var(--text-muted); margin-top:-0.5rem;">
       توجه: قبل از اتصال، ابتدا ربات را در کانال خود مدیر (Admin) کرده و مجوز ارسال پیام (Post Messages) بدهید.
     </p>
     <form id="channel-form" onsubmit="submitChannelForm(event)">
@@ -783,23 +907,23 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
     function renderOverviewTab(container) {
       container.innerHTML = \`
         <div class="kpi-grid">
-          <div class="card">
+          <div class="card kpi-card">
             <div class="kpi-title">کاربران دارای اشتراک فعال</div>
             <div class="kpi-val">\${state.overview.activeSubscriptions}</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card">
             <div class="kpi-title">کانال‌های متصل (@channel)</div>
             <div class="kpi-val">\${state.overview.activeChannels}</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card">
             <div class="kpi-title">فیلترهای لحظه‌ای فعال (LIVE)</div>
             <div class="kpi-val">\${state.overview.liveRules}</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card">
             <div class="kpi-title">فیلترهای در حال آرشیو (BACKFILL)</div>
             <div class="kpi-val">\${state.overview.backfillRules}</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card">
             <div class="kpi-title">آگهی‌های ارسالی امروز (۲۴ ساعت)</div>
             <div class="kpi-val">\${state.overview.adsSentToday}</div>
           </div>
@@ -898,7 +1022,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             <td>\${r.divar_category_slug}</td>
             <td>
               \${r.deal_type === 'RENT' ? 'رهن: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد') : 'بودجه: ' + (r.max_budget ? (r.max_budget / 1000000).toLocaleString('fa-IR') + ' م' : 'آزاد')}
-              <br/><span style="font-size:0.78rem; color:var(--muted);">\${r.min_area || 0} تا \${r.max_area || '∞'} متر</span>
+              <br/><span style="font-size:0.78rem; color:var(--text-muted);">\${r.min_area || 0} تا \${r.max_area || '∞'} متر</span>
             </td>
             <td>
               \${polyCount >= 3 ? '<span class="badge badge-live">📍 مرزبندی (' + polyCount + ' نقطه)</span>' : '<span class="badge badge-muted">کل شهر</span>'}
@@ -907,7 +1031,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             </td>
             <td>
               <span class="badge \${r.phase === 'LIVE' ? 'badge-live' : 'badge-backfill'}">\${r.phase || 'BACKFILL'}</span>
-              <div style="font-size:0.75rem; color:var(--muted);">سقف سن: \${r.max_post_age_hours || 24} ساعت</div>
+              <div style="font-size:0.75rem; color:var(--text-muted);">سقف سن: \${r.max_post_age_hours || 24} ساعت</div>
             </td>
             <td>
               <span class="badge \${r.is_active ? 'badge-live' : 'badge-danger'}">\${r.is_active ? 'فعال' : 'غیرفعال'}</span>
@@ -931,7 +1055,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
             <div>
               <h3 style="margin:0;">🎯 لیست فیلترهای استخراج و ارسال هوشمند</h3>
-              <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
+              <p style="font-size:0.85rem; color:var(--text-muted); margin:0.25rem 0 0 0;">
                 پایش دیوار بر اساس بودجه، متراژ، محدوده خط‌کشی‌شده روی نقشه و حذف خودکار مشاورین و آژانس‌های املاک.
               </p>
             </div>
@@ -1271,7 +1395,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
             <div>
               <h3 style="margin:0;">📢 کانال‌های متصل تلگرام (@channel)</h3>
-              <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
+              <p style="font-size:0.85rem; color:var(--text-muted); margin:0.25rem 0 0 0;">
                 کانال‌هایی که فیلترهای ملکی آگهی‌های منطبق را در آن‌ها با قالب حرفه‌ای امیران منتشر می‌کنند.
               </p>
             </div>
@@ -1359,7 +1483,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         <tr>
           <td>
             <strong>\${u.full_name || 'کاربر'}</strong>
-            <div style="font-size:0.75rem; color:var(--muted);">ID: <code>\${u.telegram_id}</code> \${u.username ? '@' + u.username : ''}</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">ID: <code>\${u.telegram_id}</code> \${u.username ? '@' + u.username : ''}</div>
           </td>
           <td><span class="badge \${u.role === 'SUPERADMIN' ? 'badge-danger' : (u.role === 'ADMIN' ? 'badge-warn' : 'badge-muted')}">\${u.role}</span></td>
           <td><strong>\${u.plan_name || 'فاقد اشتراک فعال'}</strong></td>
@@ -1391,7 +1515,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
             <div>
               <h3 style="margin:0;">💎 مدیریت کاربران، نقش‌ها و اشتراک‌ها</h3>
-              <p style="font-size:0.85rem; color:var(--muted); margin:0.25rem 0 0 0;">
+              <p style="font-size:0.85rem; color:var(--text-muted); margin:0.25rem 0 0 0;">
                 اعطای دستی اشتراک به مشاورین، تعیین دسترسی ادمین و مدیریت مسدودیت.
               </p>
             </div>
@@ -1459,7 +1583,7 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       container.innerHTML = \`
         <div class="card">
           <h3 style="margin:0 0 0.5rem 0;">🧪 شبیه‌ساز زنده ارزیابی آگهی دیوار و پیش‌نمایش قالب جدید کانال</h3>
-          <p style="font-size:0.85rem; color:var(--muted); margin:0 0 1rem 0;">
+          <p style="font-size:0.85rem; color:var(--text-muted); margin:0 0 1rem 0;">
             توکن هر آگهی در دیوار را وارد کرده و نحوه اعمال فیلتر مرزبندی نقشه، فیلتر حذف مشاورین املاک و فرمت نهایی پیام کانال را بررسی نمایید.
           </p>
 
@@ -1496,15 +1620,15 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
           </div>
 
-          <div style="background:#fef2f2; padding:0.75rem; border-radius:0.4rem; margin-bottom:0.75rem; border:1px solid #fecaca;">
-            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; font-weight:600; color:#991b1b; cursor:pointer;">
+          <div class="box-danger" style="padding:0.75rem; margin-bottom:0.75rem;">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; font-weight:700; cursor:pointer;">
               <input type="checkbox" id="sim-exclude-agency" checked />
               فعال‌سازی فیلتر حذف آگهی‌های املاک، مشاور و دلال (عدم تایید در صورت وجود کلمات ممنوعه)
             </label>
           </div>
 
-          <div style="background:#eff6ff; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #bfdbfe;">
-            <div style="font-size:0.85rem; font-weight:600; color:#1e40af; margin-bottom:0.4rem;">🔘 تست دکمه‌های شیشه‌ای در پیش‌نمایش:</div>
+          <div class="box-info" style="padding:0.75rem; margin-bottom:1rem;">
+            <div style="font-size:0.85rem; font-weight:700; color:var(--primary); margin-bottom:0.4rem;">🔘 تست دکمه‌های شیشه‌ای در پیش‌نمایش:</div>
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:0.5rem;">
               <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; cursor:pointer;">
                 <input type="checkbox" id="sim-btn-divar" checked /> 🔗 مشاهده در دیوار
@@ -1533,19 +1657,19 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
                 <div id="sim-status-text" style="font-size:0.88rem; font-weight:600; margin-top:0.2rem;"></div>
               </div>
             </div>
-            <div id="sim-reasons" style="font-size:0.82rem; color:var(--muted);"></div>
+            <div id="sim-reasons" style="font-size:0.82rem; color:var(--text-muted);"></div>
           </div>
 
           <div class="kpi-grid" style="margin-bottom:1rem;">
-            <div class="card" style="margin:0; background:#f8fafc;">
+            <div class="card" style="margin:0; background:var(--surface-subtle);">
               <div class="kpi-title">امتیاز مالی و بودجه</div>
               <div class="kpi-val" id="sim-score-budget">-</div>
             </div>
-            <div class="card" style="margin:0; background:#f8fafc;">
+            <div class="card" style="margin:0; background:var(--surface-subtle);">
               <div class="kpi-title">امتیاز متراژ و تلورانس</div>
               <div class="kpi-val" id="sim-score-area">-</div>
             </div>
-            <div class="card" style="margin:0; background:#f8fafc;">
+            <div class="card" style="margin:0; background:var(--surface-subtle);">
               <div class="kpi-title">امتیاز امکانات مرحله ۲</div>
               <div class="kpi-val" id="sim-score-specs">-</div>
             </div>
