@@ -417,20 +417,39 @@ export function buildTelegramCardPayload(
       .slice(0, 1018);
   }
 
+  const showBtnDivar = rule.show_btn_divar !== 0;
+  const showBtnMap = rule.show_btn_map !== 0;
+  const showBtnScore = rule.show_btn_score !== 0;
+  const showBtnContact = rule.show_btn_contact !== 0;
+
   const divarUrl = `https://divar.ir/v/${ad.token}`;
-  const replyMarkup = {
-    inline_keyboard: [
-      [
-        { text: '🔗 مشاهده آگهی در دیوار', url: divarUrl },
-        ...(ad.latitude && ad.longitude
-          ? [{ text: '🗺 موقعیت روی نقشه', url: `https://maps.google.com/?q=${ad.latitude},${ad.longitude}` }]
-          : [])
-      ],
-      [
-        { text: `📊 درصد تطابق: ${score}٪`, callback_data: `score_info:${rule.id}:${ad.token}:${score}` }
-      ]
-    ]
-  };
+  const inlineKeyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [];
+
+  // Row 1: Divar and/or Map
+  const row1: Array<{ text: string; url?: string; callback_data?: string }> = [];
+  if (showBtnDivar) {
+    row1.push({ text: '🔗 مشاهده آگهی در دیوار', url: divarUrl });
+  }
+  if (showBtnMap && ad.latitude && ad.longitude) {
+    row1.push({ text: '🗺 موقعیت روی نقشه', url: `https://maps.google.com/?q=${ad.latitude},${ad.longitude}` });
+  }
+  if (row1.length > 0) {
+    inlineKeyboard.push(row1);
+  }
+
+  // Row 2: Score and/or Contact
+  const row2: Array<{ text: string; url?: string; callback_data?: string }> = [];
+  if (showBtnScore) {
+    row2.push({ text: `📊 درصد تطابق: ${score}٪`, callback_data: `score_info:${rule.id}:${ad.token}:${score}` });
+  }
+  if (showBtnContact) {
+    row2.push({ text: '📞 تماس با ما', callback_data: `contact_info:${ad.token}` });
+  }
+  if (row2.length > 0) {
+    inlineKeyboard.push(row2);
+  }
+
+  const replyMarkup = inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined;
 
   // If multiple images are present, send as an album (sendMediaGroup)
   const albumUrls = (ad.imageUrls && ad.imageUrls.length > 0)
@@ -445,7 +464,9 @@ export function buildTelegramCardPayload(
       };
       if (idx === 0) {
         // First media holds the rich caption with direct HTML link to Divar
-        item.caption = caption + `\n🔗 <a href="${divarUrl}">مشاهده مستقیم در دیوار</a>`;
+        item.caption = showBtnDivar
+          ? caption + `\n🔗 <a href="${divarUrl}">مشاهده مستقیم در دیوار</a>`
+          : caption;
         item.parse_mode = 'HTML';
       }
       return item;
@@ -455,7 +476,8 @@ export function buildTelegramCardPayload(
       method: 'sendMediaGroup',
       body: {
         chat_id: chatId,
-        media
+        media,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {})
       }
     };
   }
@@ -468,7 +490,7 @@ export function buildTelegramCardPayload(
         photo: albumUrls[0],
         caption,
         parse_mode: 'HTML',
-        reply_markup: replyMarkup
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {})
       }
     };
   }
@@ -480,7 +502,7 @@ export function buildTelegramCardPayload(
       text: caption,
       parse_mode: 'HTML',
       disable_web_page_preview: false,
-      reply_markup: replyMarkup
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {})
     }
   };
 }

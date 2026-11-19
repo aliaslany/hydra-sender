@@ -115,8 +115,9 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
             city_ids_json, districts_json, deal_type, property_type, divar_category_slug,
             min_budget, max_budget, min_rent, max_rent, min_area, max_area,
             tolerance_pct, min_match_score, stage2_filters_json,
-            geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json,
+            show_btn_divar, show_btn_map, show_btn_score, show_btn_contact
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           ruleId,
           channelId,
@@ -139,7 +140,11 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           body.geo_polygon_json || null,
           body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
           Number(body.max_post_age_hours) || 24,
-          body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
+          body.negative_keywords ? JSON.stringify(body.negative_keywords) : null,
+          body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : 1,
+          body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
+          body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
+          body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
         ),
         env.DB.prepare(
           `INSERT INTO sync_state (rule_id, phase, backfill_target_count) VALUES (?, 'BACKFILL', ?)`
@@ -250,6 +255,10 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           exclude_agency = ?,
           max_post_age_hours = ?,
           negative_keywords_json = ?,
+          show_btn_divar = ?,
+          show_btn_map = ?,
+          show_btn_score = ?,
+          show_btn_contact = ?,
           updated_at = unixepoch()
         WHERE id = ?`
       ).bind(
@@ -273,6 +282,10 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
         body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
         body.negative_keywords ? JSON.stringify(body.negative_keywords) : (existing.negative_keywords_json ?? null),
+        body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : (Number(existing.show_btn_divar) ?? 1),
+        body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
+        body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
+        body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
         ruleId
       ).run();
 
@@ -449,7 +462,11 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         geo_polygon_json: body.geo_polygon_json || null,
         exclude_agency: body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
         max_post_age_hours: Number(body.max_post_age_hours) || 24,
-        negative_keywords_json: body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
+        negative_keywords_json: body.negative_keywords ? JSON.stringify(body.negative_keywords) : null,
+        show_btn_divar: body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : 1,
+        show_btn_map: body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
+        show_btn_score: body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
+        show_btn_contact: body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
       };
 
       const ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);

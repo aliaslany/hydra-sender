@@ -91,6 +91,10 @@ const INIT_STATEMENTS = [
     exclude_agency INTEGER NOT NULL DEFAULT 1,
     max_post_age_hours INTEGER NOT NULL DEFAULT 24,
     negative_keywords_json TEXT,
+    show_btn_divar INTEGER NOT NULL DEFAULT 1,
+    show_btn_map INTEGER NOT NULL DEFAULT 1,
+    show_btn_score INTEGER NOT NULL DEFAULT 1,
+    show_btn_contact INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
@@ -180,7 +184,11 @@ async function ensureSchema(db: D1Database): Promise<void> {
     'ALTER TABLE filter_rules ADD COLUMN geo_polygon_json TEXT',
     'ALTER TABLE filter_rules ADD COLUMN exclude_agency INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE filter_rules ADD COLUMN max_post_age_hours INTEGER NOT NULL DEFAULT 24',
-    'ALTER TABLE filter_rules ADD COLUMN negative_keywords_json TEXT'
+    'ALTER TABLE filter_rules ADD COLUMN negative_keywords_json TEXT',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_divar INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_map INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_score INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_contact INTEGER NOT NULL DEFAULT 1'
   ];
   for (const mig of migrations) {
     try {

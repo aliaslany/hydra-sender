@@ -51,6 +51,10 @@ export interface FilterRule {
   exclude_agency?: number;
   max_post_age_hours?: number;
   negative_keywords_json?: string;
+  show_btn_divar?: number;
+  show_btn_map?: number;
+  show_btn_score?: number;
+  show_btn_contact?: number;
 }
 
 export interface ParsedDivarAd {

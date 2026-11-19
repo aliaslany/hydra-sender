@@ -258,6 +258,32 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- Feature 4: Telegram Inline Keyboard Buttons -->
+      <div style="background:#eff6ff; padding:0.85rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #bfdbfe;">
+        <h4 style="margin:0 0 0.4rem 0; font-size:0.88rem; color:#1e40af;">🔘 دکمه‌های شیشه‌ای زیر پست تلگرام (Inline Buttons):</h4>
+        <p style="font-size:0.78rem; color:#475569; margin:0 0 0.6rem 0;">
+          دکمه‌های مورد نظر برای نمایش در انتهای پست‌های ارسالی به کانال تلگرام را انتخاب کنید:
+        </p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.6rem;">
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-divar" checked />
+            🔗 مشاهده آگهی در دیوار
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-map" checked />
+            🗺 موقعیت روی نقشه
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-score" checked />
+            📊 درصد تطابق
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-contact" checked />
+            📞 تماس با ما
+          </label>
+        </div>
+      </div>
+
       <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
         <button type="submit" class="btn" id="btn-save-rule">🚀 ذخیره فیلتر</button>
         <button type="button" class="btn btn-outline" onclick="document.getElementById('rule-dialog').close()">انصراف</button>
@@ -726,6 +752,10 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       document.getElementById('r-balcony').checked = false;
       document.getElementById('r-skeleton').value = '';
       document.getElementById('r-direction').value = '';
+      document.getElementById('r-btn-divar').checked = true;
+      document.getElementById('r-btn-map').checked = true;
+      document.getElementById('r-btn-score').checked = true;
+      document.getElementById('r-btn-contact').checked = true;
       document.getElementById('btn-save-rule').textContent = '🚀 ذخیره فیلتر و شروع پایش';
 
       document.getElementById('rule-dialog').showModal();
@@ -776,6 +806,11 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
       document.getElementById('r-skeleton').value = stage2.skeleton || '';
       document.getElementById('r-direction').value = stage2.direction || '';
 
+      document.getElementById('r-btn-divar').checked = r.show_btn_divar !== 0;
+      document.getElementById('r-btn-map').checked = r.show_btn_map !== 0;
+      document.getElementById('r-btn-score').checked = r.show_btn_score !== 0;
+      document.getElementById('r-btn-contact').checked = r.show_btn_contact !== 0;
+
       let initialPoints = [];
       try {
         const parsed = JSON.parse(r.geo_polygon_json || '[]');
@@ -813,6 +848,10 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         exclude_agency: document.getElementById('r-exclude-agency').checked ? 1 : 0,
         negative_keywords: negativeWordsArray,
         geo_polygon_json: rulePoints.length >= 3 ? JSON.stringify(rulePoints) : null,
+        show_btn_divar: document.getElementById('r-btn-divar').checked ? 1 : 0,
+        show_btn_map: document.getElementById('r-btn-map').checked ? 1 : 0,
+        show_btn_score: document.getElementById('r-btn-score').checked ? 1 : 0,
+        show_btn_contact: document.getElementById('r-btn-contact').checked ? 1 : 0,
         stage2_filters: {
           parking: document.getElementById('r-parking').checked,
           elevator: document.getElementById('r-elevator').checked,
@@ -1135,11 +1174,29 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
           </div>
 
-          <div style="background:#fef2f2; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #fecaca;">
+          <div style="background:#fef2f2; padding:0.75rem; border-radius:0.4rem; margin-bottom:0.75rem; border:1px solid #fecaca;">
             <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; font-weight:600; color:#991b1b; cursor:pointer;">
               <input type="checkbox" id="sim-exclude-agency" checked />
               فعال‌سازی فیلتر حذف آگهی‌های املاک، مشاور و دلال (عدم تایید در صورت وجود کلمات ممنوعه)
             </label>
+          </div>
+
+          <div style="background:#eff6ff; padding:0.75rem; border-radius:0.4rem; margin-bottom:1rem; border:1px solid #bfdbfe;">
+            <div style="font-size:0.85rem; font-weight:600; color:#1e40af; margin-bottom:0.4rem;">🔘 تست دکمه‌های شیشه‌ای در پیش‌نمایش:</div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:0.5rem;">
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; cursor:pointer;">
+                <input type="checkbox" id="sim-btn-divar" checked /> 🔗 مشاهده در دیوار
+              </label>
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; cursor:pointer;">
+                <input type="checkbox" id="sim-btn-map" checked /> 🗺 موقعیت روی نقشه
+              </label>
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; cursor:pointer;">
+                <input type="checkbox" id="sim-btn-score" checked /> 📊 درصد تطابق
+              </label>
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; cursor:pointer;">
+                <input type="checkbox" id="sim-btn-contact" checked /> 📞 تماس با ما
+              </label>
+            </div>
           </div>
 
           <button class="btn" style="padding:0.6rem 1.25rem;" onclick="runSimulation()">🔍 آنالیز زنده آگهی دیوار و پیش‌نمایش خروجی تلگرام</button>
@@ -1197,7 +1254,11 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
         tolerance_pct: 0.15,
         min_match_score: Number(document.getElementById('sim-min-score').value),
         max_post_age_hours: Number(document.getElementById('sim-max-age').value) || 24,
-        exclude_agency: document.getElementById('sim-exclude-agency').checked ? 1 : 0
+        exclude_agency: document.getElementById('sim-exclude-agency').checked ? 1 : 0,
+        show_btn_divar: document.getElementById('sim-btn-divar') ? (document.getElementById('sim-btn-divar').checked ? 1 : 0) : 1,
+        show_btn_map: document.getElementById('sim-btn-map') ? (document.getElementById('sim-btn-map').checked ? 1 : 0) : 1,
+        show_btn_score: document.getElementById('sim-btn-score') ? (document.getElementById('sim-btn-score').checked ? 1 : 0) : 1,
+        show_btn_contact: document.getElementById('sim-btn-contact') ? (document.getElementById('sim-btn-contact').checked ? 1 : 0) : 1
       };
 
       try {
@@ -1256,10 +1317,21 @@ export const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
 
         document.getElementById('sim-telegram-card').innerHTML = photoMarkup + formattedText;
 
-        const btnUrl = cardBody.reply_markup?.inline_keyboard?.[0]?.[0]?.url || ('https://divar.ir/v/' + rawToken);
-        document.getElementById('sim-telegram-link').innerHTML = \`
-          <a href="\${btnUrl}" target="_blank" class="telegram-btn-preview">🔗 مشاهده آگهی در دیوار</a>
-        \`;
+        const keyboard = cardBody.reply_markup?.inline_keyboard || [];
+        let buttonsHtml = '';
+        if (keyboard.length > 0) {
+          buttonsHtml = '<div style="display:flex; flex-direction:column; gap:6px; margin-top:10px;">';
+          for (const row of keyboard) {
+            buttonsHtml += '<div style="display:flex; gap:6px; flex-wrap:wrap;">';
+            for (const btn of row) {
+              const href = btn.url ? ('href="' + btn.url + '" target="_blank"') : 'href="javascript:void(0)"';
+              buttonsHtml += '<a ' + href + ' class="telegram-btn-preview" style="flex:1; min-width:130px; text-align:center;">' + btn.text + '</a>';
+            }
+            buttonsHtml += '</div>';
+          }
+          buttonsHtml += '</div>';
+        }
+        document.getElementById('sim-telegram-link').innerHTML = buttonsHtml;
         notify('تحلیل و ارزیابی آگهی انجام شد.');
       } catch (err) {
         notify('خطا در ارزیابی آگهی: ' + err.message);

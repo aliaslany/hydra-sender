@@ -93,6 +93,14 @@ CREATE TABLE IF NOT EXISTS filter_rules (
     tolerance_pct REAL NOT NULL DEFAULT 0.15 CHECK(tolerance_pct BETWEEN 0.0 AND 0.25),
     min_match_score INTEGER NOT NULL DEFAULT 65 CHECK(min_match_score BETWEEN 0 AND 100),
     stage2_filters_json TEXT NOT NULL DEFAULT '{}',
+    geo_polygon_json TEXT,
+    exclude_agency INTEGER NOT NULL DEFAULT 1,
+    max_post_age_hours INTEGER NOT NULL DEFAULT 24,
+    negative_keywords_json TEXT,
+    show_btn_divar INTEGER NOT NULL DEFAULT 1,
+    show_btn_map INTEGER NOT NULL DEFAULT 1,
+    show_btn_score INTEGER NOT NULL DEFAULT 1,
+    show_btn_contact INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

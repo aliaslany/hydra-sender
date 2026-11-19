@@ -82,6 +82,15 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
       return new Response('OK');
     }
 
+    if (data.startsWith('contact_info:') || data === 'contact_info') {
+      await tgApi(env, 'answerCallbackQuery', {
+        callback_query_id: cb.id,
+        text: `📞 اطلاعات تماس و مشاوره:\n📱 همراه: 09922434338\n☎️ دفتر: 01734241371\n📍 علی‌آباد کتول، خیابان پاسداران، نبش پاسداران ۸، املاک امیران\n🔗 کانال تلگرام: @aliabadmelk`,
+        show_alert: true
+      });
+      return new Response('OK');
+    }
+
     const userRow: any = await env.DB.prepare(`SELECT * FROM users WHERE telegram_id = ?`).bind(fromId).first();
     const draft: any = userRow?.wizard_draft_json ? JSON.parse(userRow.wizard_draft_json) : {};
 

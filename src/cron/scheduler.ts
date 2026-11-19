@@ -148,10 +148,15 @@ export async function runScheduledTick(env: Env): Promise<void> {
     const item = items[i];
     try {
       const payload = JSON.parse(item.card_payload_json);
+      const bodyToSend = { ...payload.body };
+      const replyMarkup = bodyToSend.reply_markup;
+      if (payload.method === 'sendMediaGroup') {
+        delete bodyToSend.reply_markup;
+      }
       const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${payload.method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload.body)
+        body: JSON.stringify(bodyToSend)
       });
       const tgJson: any = await tgRes.json();
 
@@ -159,6 +164,20 @@ export async function runScheduledTick(env: Env): Promise<void> {
         const msgId = Array.isArray(tgJson.result)
           ? (tgJson.result[0]?.message_id || 0)
           : (tgJson.result?.message_id || 0);
+
+        if (payload.method === 'sendMediaGroup' && replyMarkup?.inline_keyboard?.length > 0) {
+          try {
+            await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: bodyToSend.chat_id,
+                text: '📎 دسترسی سریع و راه‌های ارتباطی:',
+                reply_markup: replyMarkup
+              })
+            });
+          } catch (_) {}
+        }
 
         const batchStmts: D1PreparedStatement[] = [
           env.DB.prepare(
