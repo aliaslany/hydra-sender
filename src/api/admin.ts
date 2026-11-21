@@ -1,5 +1,6 @@
-import { Env, FilterRule } from '../types';
+import { Env, FilterRule, ParsedDivarAd } from '../types';
 import { fetchDivarPostDetail } from '../divar/scraper';
+import { fetchSheypoorPostDetail } from '../sheypoor/scraper';
 import { evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 import { runScheduledTick } from '../cron/scheduler';
@@ -72,6 +73,55 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       });
     }
 
+    // 1.5. GET /api/admin/activities (Endless Scroll & Live Stream)
+    if (path === '/api/admin/activities' && request.method === 'GET') {
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10));
+      const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+      const since = parseInt(url.searchParams.get('since') || '0', 10);
+
+      if (since > 0) {
+        const recent = await env.DB.prepare(
+          `SELECT sa.*, r.name as rule_name, c.chat_id
+           FROM sent_ads sa
+           LEFT JOIN filter_rules r ON sa.rule_id = r.id
+           LEFT JOIN channels c ON sa.channel_id = c.id
+           WHERE sa.discovered_at > ?
+           ORDER BY sa.discovered_at DESC, sa.rowid DESC
+           LIMIT 50`
+        ).bind(since).all();
+
+        return jsonResponse({
+          ok: true,
+          activities: recent.results || [],
+          hasMore: false
+        });
+      }
+
+      const [rowsRes, countRes] = await env.DB.batch([
+        env.DB.prepare(
+          `SELECT sa.*, r.name as rule_name, c.chat_id
+           FROM sent_ads sa
+           LEFT JOIN filter_rules r ON sa.rule_id = r.id
+           LEFT JOIN channels c ON sa.channel_id = c.id
+           ORDER BY sa.discovered_at DESC, sa.rowid DESC
+           LIMIT ? OFFSET ?`
+        ).bind(limit, offset),
+        env.DB.prepare(`SELECT count(*) as total FROM sent_ads`)
+      ]);
+
+      const total = Number((countRes.results?.[0] as any)?.total || 0);
+      const activities = rowsRes.results || [];
+
+      return jsonResponse({
+        ok: true,
+        activities,
+        offset,
+        limit,
+        total,
+        hasMore: (offset + activities.length) < total
+      });
+    }
+
     // 2. GET & POST /api/admin/rules
     if (path === '/api/admin/rules' && request.method === 'GET') {
       const res = await env.DB.prepare(
@@ -86,28 +136,39 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
 
     if (path === '/api/admin/rules' && request.method === 'POST') {
       const body: any = await request.json();
-      const chatId: string = (body.channel_chat_id || '@somechannel').trim();
-      const channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
-      const ruleId = `rule_${Date.now()}`;
+      const chatId: string = (body.channel_chat_id || body.chat_id || '@aliabadmelk').trim();
       const ownerId = Number(body.owner_user_id) || 1000000;
+      const ruleId = `rule_${Date.now()}`;
+
+      // 1. Ensure user exists
+      await env.DB.prepare(
+        `INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
+      ).bind(ownerId).run();
+
+      // 2. Ensure channel exists and retrieve canonical channel ID
+      let channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const existingCh: any = await env.DB.prepare(`SELECT id FROM channels WHERE chat_id = ?`).bind(chatId).first();
+      if (existingCh) {
+        channelId = existingCh.id;
+        await env.DB.prepare(`UPDATE channels SET is_enabled = 1 WHERE id = ?`).bind(channelId).run();
+      } else {
+        await env.DB.prepare(
+          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
+           VALUES (?, ?, ?, ?, 1, 1, 1)`
+        ).bind(channelId, ownerId, chatId, chatId).run();
+      }
 
       await env.DB.batch([
-        env.DB.prepare(
-          `INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
-        ).bind(ownerId),
-        env.DB.prepare(
-          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
-           VALUES (?, ?, ?, ?, 1, 1, 1)
-           ON CONFLICT(chat_id) DO UPDATE SET is_enabled=1`
-        ).bind(channelId, ownerId, chatId, chatId),
         env.DB.prepare(
           `INSERT INTO filter_rules (
             id, channel_id, owner_user_id, name, is_active,
             city_ids_json, districts_json, deal_type, property_type, divar_category_slug,
             min_budget, max_budget, min_rent, max_rent, min_area, max_area,
             tolerance_pct, min_match_score, stage2_filters_json,
-            geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json,
+            show_btn_divar, show_btn_map, show_btn_score, show_btn_contact,
+            source_divar, source_sheypoor
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           ruleId,
           channelId,
@@ -130,11 +191,17 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           body.geo_polygon_json || null,
           body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
           Number(body.max_post_age_hours) || 24,
-          body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
+          body.negative_keywords ? JSON.stringify(body.negative_keywords) : null,
+          body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : 1,
+          body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
+          body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
+          body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1,
+          body.source_divar !== undefined ? Number(body.source_divar) : 1,
+          body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : 1
         ),
         env.DB.prepare(
           `INSERT INTO sync_state (rule_id, phase, backfill_target_count) VALUES (?, 'BACKFILL', ?)`
-        ).bind(ruleId, Number(body.backfill_target_count) ?? 30)
+        ).bind(ruleId, Number(body.backfill_target_count) || 30)
       ]);
 
       return jsonResponse({ ok: true, rule_id: ruleId });
@@ -196,15 +263,32 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         return jsonResponse({ error: 'قانون فیلتر یافت نشد' }, 404);
       }
 
+      let updatedChannelId = existing.channel_id;
+      if (body.channel_chat_id) {
+        const newChatId = body.channel_chat_id.trim();
+        const existingCh: any = await env.DB.prepare(`SELECT id FROM channels WHERE chat_id = ?`).bind(newChatId).first();
+        if (existingCh) {
+          updatedChannelId = existingCh.id;
+          await env.DB.prepare(`UPDATE channels SET is_enabled = 1 WHERE id = ?`).bind(updatedChannelId).run();
+        } else {
+          updatedChannelId = `ch_${newChatId.replace(/[^a-zA-Z0-9]/g, '')}`;
+          await env.DB.prepare(
+            `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
+             VALUES (?, ?, ?, ?, 1, 1, 1) ON CONFLICT(chat_id) DO UPDATE SET is_enabled=1`
+          ).bind(updatedChannelId, existing.owner_user_id || 1000000, newChatId, newChatId).run();
+        }
+      }
+
       const updatedName = body.name || existing.name;
       const updatedSlug = body.divar_category_slug || existing.divar_category_slug;
       const updatedDealType = body.deal_type || existing.deal_type;
       const updatedPropType = body.property_type || existing.property_type;
-      const updatedCities = body.city_ids ? JSON.stringify(body.city_ids) : existing.city_ids_json;
-      const updatedDistricts = body.districts ? JSON.stringify(body.districts) : existing.districts_json;
+      const updatedCities = body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]');
+      const updatedDistricts = body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]');
 
       await env.DB.prepare(
         `UPDATE filter_rules SET
+          channel_id = ?,
           name = ?,
           divar_category_slug = ?,
           deal_type = ?,
@@ -224,28 +308,41 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           exclude_agency = ?,
           max_post_age_hours = ?,
           negative_keywords_json = ?,
+          show_btn_divar = ?,
+          show_btn_map = ?,
+          show_btn_score = ?,
+          show_btn_contact = ?,
+          source_divar = ?,
+          source_sheypoor = ?,
           updated_at = unixepoch()
         WHERE id = ?`
       ).bind(
+        updatedChannelId,
         updatedName,
         updatedSlug,
         updatedDealType,
         updatedPropType,
         updatedCities,
         updatedDistricts,
-        body.min_budget !== undefined ? Number(body.min_budget) : existing.min_budget,
-        body.max_budget !== undefined ? Number(body.max_budget) : existing.max_budget,
-        body.min_rent !== undefined ? Number(body.min_rent) : existing.min_rent,
-        body.max_rent !== undefined ? Number(body.max_rent) : existing.max_rent,
-        body.min_area !== undefined ? Number(body.min_area) : existing.min_area,
-        body.max_area !== undefined ? Number(body.max_area) : existing.max_area,
-        body.tolerance_pct !== undefined ? Number(body.tolerance_pct) : existing.tolerance_pct,
-        body.min_match_score !== undefined ? Number(body.min_match_score) : existing.min_match_score,
-        body.stage2_filters ? JSON.stringify(body.stage2_filters) : existing.stage2_filters_json,
-        body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : existing.geo_polygon_json,
-        body.exclude_agency !== undefined ? Number(body.exclude_agency) : existing.exclude_agency,
-        body.max_post_age_hours !== undefined ? Number(body.max_post_age_hours) : existing.max_post_age_hours,
-        body.negative_keywords ? JSON.stringify(body.negative_keywords) : existing.negative_keywords_json,
+        body.min_budget !== undefined ? (Number(body.min_budget) || 0) : (Number(existing.min_budget) || 0),
+        body.max_budget !== undefined ? (Number(body.max_budget) || 0) : (Number(existing.max_budget) || 0),
+        body.min_rent !== undefined ? (Number(body.min_rent) || 0) : (Number(existing.min_rent) || 0),
+        body.max_rent !== undefined ? (Number(body.max_rent) || 0) : (Number(existing.max_rent) || 0),
+        body.min_area !== undefined ? (Number(body.min_area) || 0) : (Number(existing.min_area) || 0),
+        body.max_area !== undefined ? (Number(body.max_area) || 0) : (Number(existing.max_area) || 0),
+        body.tolerance_pct !== undefined ? (Number(body.tolerance_pct) || 0.15) : (Number(existing.tolerance_pct) || 0.15),
+        body.min_match_score !== undefined ? (Number(body.min_match_score) || 65) : (Number(existing.min_match_score) || 65),
+        body.stage2_filters ? JSON.stringify(body.stage2_filters) : (existing.stage2_filters_json ?? '{}'),
+        body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : (existing.geo_polygon_json ?? null),
+        body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
+        body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
+        body.negative_keywords ? JSON.stringify(body.negative_keywords) : (existing.negative_keywords_json ?? null),
+        body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : (Number(existing.show_btn_divar) ?? 1),
+        body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
+        body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
+        body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
+        body.source_divar !== undefined ? Number(body.source_divar) : (existing.source_divar !== undefined ? Number(existing.source_divar) : 1),
+        body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : (existing.source_sheypoor !== undefined ? Number(existing.source_sheypoor) : 1),
         ruleId
       ).run();
 
@@ -422,18 +519,81 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         geo_polygon_json: body.geo_polygon_json || null,
         exclude_agency: body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
         max_post_age_hours: Number(body.max_post_age_hours) || 24,
-        negative_keywords_json: body.negative_keywords ? JSON.stringify(body.negative_keywords) : null
+        negative_keywords_json: body.negative_keywords ? JSON.stringify(body.negative_keywords) : null,
+        show_btn_divar: body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : 1,
+        show_btn_map: body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
+        show_btn_score: body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
+        show_btn_contact: body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
       };
 
-      const ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);
+      const isSheypoor = postToken.startsWith('sp_') ||
+                         postToken.includes('sheypoor.com') ||
+                         (/^\d{6,12}$/.test(postToken.trim()));
+
+      let ad: ParsedDivarAd | null = null;
+      if (isSheypoor) {
+        const cleanSpId = postToken.replace(/^sp_/, '').match(/\d+/)?.[0] || postToken;
+        ad = await fetchSheypoorPostDetail(cleanSpId, mockRule.deal_type, env);
+      } else {
+        ad = await fetchDivarPostDetail(postToken, mockRule.deal_type, env);
+      }
+
       if (!ad) {
-        return jsonResponse({ error: 'آگهی در دیوار یافت نشد یا دسترسی مسدود است' }, 404);
+        return jsonResponse({
+          error: isSheypoor
+            ? 'آگهی در شیپور یافت نشد یا دسترسی مسدود است'
+            : 'آگهی در دیوار یافت نشد یا دسترسی مسدود است'
+        }, 404);
       }
 
       const matchResult = evaluateAdMatch(ad, mockRule);
       const cardPreview = buildTelegramCardPayload(ad, matchResult, mockRule, body.channel_id || '@preview_channel', false);
 
       return jsonResponse({ ad, matchResult, cardPreview });
+    }
+
+    // 6. Verify Telegram Channel & Bot Admin Permissions
+    if (path === '/api/admin/verify-channel' && request.method === 'GET') {
+      const chatId = (url.searchParams.get('chat_id') || '@aliabadmelk').trim();
+      const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getChat?chat_id=${encodeURIComponent(chatId)}`);
+      const tgJson: any = await tgRes.json();
+
+      let botMemberJson: any = null;
+      if (tgJson.ok) {
+        const meRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+        const meJson: any = await meRes.json();
+        if (meJson.ok) {
+          const memberRes = await fetch(
+            `https://api.telegram.org/bot${env.BOT_TOKEN}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${meJson.result.id}`
+          );
+          botMemberJson = await memberRes.json();
+        }
+      }
+
+      return jsonResponse({
+        chat_id: chatId,
+        chat: tgJson,
+        bot_member: botMemberJson
+      });
+    }
+
+    // 7. Send Test Message to Telegram Channel
+    if (path === '/api/admin/test-channel-message' && request.method === 'POST') {
+      const body: any = await request.json();
+      const chatId = (body.chat_id || '@aliabadmelk').trim();
+      const msg = body.text || `🤖 <b>تست ارتباط سامانه هوشمند املاک هیدرا</b>\n\n✅ اتصال کانال ${chatId} با موفقیت تأیید شد.\n⏱ زمان: ${new Date().toLocaleTimeString('fa-IR')}`;
+
+      const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: msg,
+          parse_mode: 'HTML'
+        })
+      });
+      const tgJson: any = await tgRes.json();
+      return jsonResponse({ ok: tgRes.ok && tgJson.ok, result: tgJson });
     }
 
     return jsonResponse({ error: 'Route not found' }, 404);

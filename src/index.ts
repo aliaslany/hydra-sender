@@ -91,6 +91,12 @@ const INIT_STATEMENTS = [
     exclude_agency INTEGER NOT NULL DEFAULT 1,
     max_post_age_hours INTEGER NOT NULL DEFAULT 24,
     negative_keywords_json TEXT,
+    show_btn_divar INTEGER NOT NULL DEFAULT 1,
+    show_btn_map INTEGER NOT NULL DEFAULT 1,
+    show_btn_score INTEGER NOT NULL DEFAULT 1,
+    show_btn_contact INTEGER NOT NULL DEFAULT 1,
+    source_divar INTEGER NOT NULL DEFAULT 1,
+    source_sheypoor INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
@@ -180,13 +186,30 @@ async function ensureSchema(db: D1Database): Promise<void> {
     'ALTER TABLE filter_rules ADD COLUMN geo_polygon_json TEXT',
     'ALTER TABLE filter_rules ADD COLUMN exclude_agency INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE filter_rules ADD COLUMN max_post_age_hours INTEGER NOT NULL DEFAULT 24',
-    'ALTER TABLE filter_rules ADD COLUMN negative_keywords_json TEXT'
+    'ALTER TABLE filter_rules ADD COLUMN negative_keywords_json TEXT',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_divar INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_map INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_score INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN show_btn_contact INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN source_divar INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE filter_rules ADD COLUMN source_sheypoor INTEGER NOT NULL DEFAULT 1'
   ];
   for (const mig of migrations) {
     try {
       await db.prepare(mig).run();
     } catch (_) {}
   }
+
+  try {
+    await db.prepare(
+      `INSERT INTO users (telegram_id, username, full_name, role) VALUES (1000000, 'admin', 'مدیر سیستم', 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
+    ).run();
+    await db.prepare(
+      `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+       VALUES ('sub_admin_vip', 1000000, 'AGENCY_VIP', 'ACTIVE', unixepoch(), unixepoch() + 315360000)
+       ON CONFLICT(id) DO UPDATE SET status = 'ACTIVE', expires_at = unixepoch() + 315360000`
+    ).run();
+  } catch (_) {}
 
   schemaBootstrapped = true;
 }

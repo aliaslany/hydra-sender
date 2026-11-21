@@ -1,5 +1,6 @@
 import { Env, FilterRule } from '../types';
 import { fetchDivarPostDetail, searchDivarPostList } from '../divar/scraper';
+import { fetchSheypoorPostDetail, searchSheypoorPostList } from '../sheypoor/scraper';
 import { evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 
@@ -20,13 +21,16 @@ export async function runScheduledTick(env: Env): Promise<void> {
   const activeRulesRes = await env.DB.prepare(
     `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_queued_count,
             s.pagination_cursor_date, s.pagination_page, s.search_uid, s.last_watermark_timestamp,
-            sub.id as sub_id, sub.searches_used_today, sub.total_ads_sent, sub.max_total_searches,
-            p.daily_ad_quota
+            sub.id as sub_id,
+            COALESCE(sub.searches_used_today, 0) as searches_used_today,
+            COALESCE(sub.total_ads_sent, 0) as total_ads_sent,
+            sub.max_total_searches,
+            COALESCE(p.daily_ad_quota, 1000) as daily_ad_quota
      FROM filter_rules r
      JOIN channels c ON r.channel_id = c.id
      JOIN sync_state s ON r.id = s.rule_id
-     JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
-     JOIN plans p ON sub.plan_id = p.id
+     LEFT JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
+     LEFT JOIN plans p ON sub.plan_id = p.id
      WHERE r.is_active = 1 AND c.is_enabled = 1 AND s.phase IN ('BACKFILL', 'LIVE')
      ORDER BY s.last_polled_at ASC
      LIMIT 2`
@@ -42,12 +46,44 @@ export async function runScheduledTick(env: Env): Promise<void> {
 
     try {
       const isBackfill = row.phase === 'BACKFILL';
-      const pagination = isBackfill && row.pagination_cursor_date
-        ? { lastPostDate: row.pagination_cursor_date, page: Number(row.pagination_page) || 1, searchUid: row.search_uid }
-        : undefined;
+      const useDivar = row.source_divar !== 0;
+      const useSheypoor = row.source_sheypoor !== 0;
 
-      const searchRes = await searchDivarPostList(row as FilterRule, env, pagination);
-      const candidateTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
+      const candidateTokens: string[] = [];
+      let nextCursorDate: string | null = null;
+      let searchUid: string | null = null;
+
+      // 1. Fetch Divar candidates if enabled
+      if (useDivar) {
+        try {
+          const divarPagination = isBackfill && row.pagination_cursor_date && !row.pagination_cursor_date.startsWith('sp_')
+            ? { lastPostDate: row.pagination_cursor_date, page: Number(row.pagination_page) || 1, searchUid: row.search_uid }
+            : undefined;
+
+          const searchRes = await searchDivarPostList(row as FilterRule, env, divarPagination);
+          const divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
+          candidateTokens.push(...divarTokens);
+          nextCursorDate = searchRes.nextCursorDate;
+          searchUid = searchRes.searchUid;
+        } catch (de: any) {
+          console.error(`Divar search error for rule ${row.id}:`, de?.message || de);
+        }
+      }
+
+      // 2. Fetch Sheypoor candidates if enabled
+      if (useSheypoor) {
+        try {
+          const spPage = isBackfill ? (Number(row.pagination_page) || 1) : 1;
+          const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage });
+          const spTokens = isBackfill ? [...spRes.tokens].reverse() : spRes.tokens;
+          candidateTokens.push(...spTokens);
+          if (!nextCursorDate && spRes.nextCursorDate) {
+            nextCursorDate = `sp_${spRes.nextCursorDate}`;
+          }
+        } catch (se: any) {
+          console.error(`Sheypoor search error for rule ${row.id}:`, se?.message || se);
+        }
+      }
 
       let queuedThisRule = 0;
       const batchStatements: D1PreparedStatement[] = [];
@@ -60,12 +96,14 @@ export async function runScheduledTick(env: Env): Promise<void> {
         ).bind(row.id, token).first();
 
         if (existing) {
-          if (!isBackfill) break; // In LIVE mode, stop as soon as we hit an already-seen token
           continue;
         }
 
         detailFetchesUsed++;
-        const ad = await fetchDivarPostDetail(token, row.deal_type, env);
+        const isSheypoor = token.startsWith('sp_');
+        const ad = isSheypoor
+          ? await fetchSheypoorPostDetail(token, row.deal_type, env)
+          : await fetchDivarPostDetail(token, row.deal_type, env);
         if (!ad) continue;
 
         const evalRes = evaluateAdMatch(ad, row as FilterRule);
@@ -93,7 +131,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
 
       // Transition BACKFILL -> LIVE once backfill target is reached or no further pages exist
       const newQueuedTotal = Number(row.backfill_queued_count) + queuedThisRule;
-      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || !searchRes.nextCursorDate);
+      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || !nextCursorDate);
 
       batchStatements.push(
         env.DB.prepare(
@@ -108,11 +146,11 @@ export async function runScheduledTick(env: Env): Promise<void> {
                consecutive_errors = 0
            WHERE rule_id = ?`
         ).bind(
-          shouldTransitionToLive ? 'LIVE' : row.phase,
+          shouldTransitionToLive ? 'LIVE' : (row.phase || 'BACKFILL'),
           newQueuedTotal,
-          shouldTransitionToLive ? null : searchRes.nextCursorDate,
-          shouldTransitionToLive ? 1 : (Number(row.pagination_page) || 1) + 1,
-          searchRes.searchUid,
+          shouldTransitionToLive ? null : (nextCursorDate ?? null),
+          shouldTransitionToLive ? 1 : ((Number(row.pagination_page) || 1) + 1),
+          searchUid ?? null,
           nowSec,
           nowSec,
           row.id
@@ -125,7 +163,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
     } catch (err: any) {
       await env.DB.prepare(
         `UPDATE sync_state SET consecutive_errors = consecutive_errors + 1, last_error_msg = ?, last_polled_at = ? WHERE rule_id = ?`
-      ).bind(String(err?.message || err), nowSec, row.id).run();
+      ).bind(String(err?.message || err || 'Unknown error'), nowSec, row.id).run();
     }
   }
 
@@ -145,32 +183,77 @@ export async function runScheduledTick(env: Env): Promise<void> {
     const item = items[i];
     try {
       const payload = JSON.parse(item.card_payload_json);
+      const bodyToSend = { ...payload.body };
+      const replyMarkup = bodyToSend.reply_markup;
+      if (payload.method === 'sendMediaGroup') {
+        delete bodyToSend.reply_markup;
+      }
       const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${payload.method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload.body)
+        body: JSON.stringify(bodyToSend)
       });
       const tgJson: any = await tgRes.json();
 
       if (tgRes.ok && tgJson.ok) {
-        await env.DB.batch([
+        const msgId = Array.isArray(tgJson.result)
+          ? (tgJson.result[0]?.message_id || 0)
+          : (tgJson.result?.message_id || 0);
+
+        if (payload.method === 'sendMediaGroup' && replyMarkup?.inline_keyboard?.length > 0) {
+          try {
+            await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: bodyToSend.chat_id,
+                text: '📎 دسترسی سریع و راه‌های ارتباطی:',
+                reply_markup: replyMarkup
+              })
+            });
+          } catch (_) {}
+        }
+
+        const batchStmts: D1PreparedStatement[] = [
           env.DB.prepare(
             `UPDATE sent_ads SET status = 'SENT', telegram_message_id = ?, sent_at = ? WHERE rule_id = ? AND post_token = ?`
-          ).bind(tgJson.result?.message_id || 0, Math.floor(Date.now() / 1000), item.rule_id, item.post_token),
-          env.DB.prepare(
-            `UPDATE subscriptions SET searches_used_today = searches_used_today + 1, total_ads_sent = total_ads_sent + 1
-             WHERE user_id = ? AND status = 'ACTIVE'`
-          ).bind(item.owner_user_id),
+          ).bind(msgId, Math.floor(Date.now() / 1000), item.rule_id, item.post_token),
           env.DB.prepare(
             `UPDATE sync_state SET backfill_dispatched_count = backfill_dispatched_count + 1 WHERE rule_id = ?`
           ).bind(item.rule_id)
-        ]);
+        ];
+
+        if (item.owner_user_id) {
+          batchStmts.push(
+            env.DB.prepare(
+              `UPDATE subscriptions SET searches_used_today = searches_used_today + 1, total_ads_sent = total_ads_sent + 1
+               WHERE user_id = ? AND status = 'ACTIVE'`
+            ).bind(item.owner_user_id)
+          );
+        }
+
+        await env.DB.batch(batchStmts);
+      } else if (tgRes.status === 429 || tgJson?.error_code === 429) {
+        const retrySec = tgJson?.parameters?.retry_after || 5;
+        console.warn(`Telegram rate limited: retry after ${retrySec}s. Remaining ads kept in QUEUED status.`);
+        break;
       } else {
-        await env.DB.prepare(
-          `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
-        ).bind(item.rule_id, item.post_token).run();
+        const errDesc = tgJson?.description || `HTTP ${tgRes.status}`;
+        console.error(`Telegram post failed for token ${item.post_token}:`, errDesc);
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
+          ).bind(item.rule_id, item.post_token),
+          env.DB.prepare(
+            `INSERT INTO system_logs (level, component, rule_id, message, meta_json) VALUES ('ERROR', 'TELEGRAM', ?, ?, ?)`
+          ).bind(
+            item.rule_id,
+            `Telegram post failed: ${errDesc}`,
+            JSON.stringify({ chat_id: payload?.body?.chat_id, token: item.post_token, error: errDesc })
+          )
+        ]);
       }
-    } catch {
+    } catch (err: any) {
       await env.DB.prepare(
         `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
       ).bind(item.rule_id, item.post_token).run();
