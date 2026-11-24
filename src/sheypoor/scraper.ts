@@ -13,9 +13,9 @@ export const SHEYPOOR_HEADERS: Record<string, string> = {
 };
 
 export const SHEYPOOR_CITY_MAP: Record<string, string> = {
-  '823': 'aliabad-katoul',
-  'علی‌آباد کتول': 'aliabad-katoul',
-  'علی اباد کتول': 'aliabad-katoul',
+  '823': 'ali-abad-katul',
+  'علی‌آباد کتول': 'ali-abad-katul',
+  'علی اباد کتول': 'ali-abad-katul',
   '1': 'tehran',
   'تهران': 'tehran',
   '24': 'gorgan',
@@ -47,7 +47,7 @@ export function resolveSheypoorCitySlug(rule: FilterRule): string {
       return SHEYPOOR_CITY_MAP[cityIds[0]];
     }
   } catch (_) {}
-  return 'aliabad-katoul';
+  return 'ali-abad-katul';
 }
 
 function parseSheypoorRelativeTime(text?: string): number | null {
@@ -132,15 +132,13 @@ export async function searchSheypoorPostList(
   const tokens: string[] = [];
 
   for (const block of rawList) {
-    const t = block?.type;
-    const items = t === 'special' || t === 'vip' ? (block?.items || []) : [block];
-    for (const item of items) {
-      const id = item?.id;
-      if (id && item?.attributes) {
-        const token = `sp_${id}`;
-        if (!tokens.includes(token)) {
-          tokens.push(token);
-        }
+    // Only process genuine local 'normal' listings (skip paidEngagement cross-city promos, vip, special, banner, activeShop)
+    if (block?.type !== 'normal') continue;
+    const id = block?.id;
+    if (id && block?.attributes) {
+      const token = `sp_${id}`;
+      if (!tokens.includes(token)) {
+        tokens.push(token);
       }
     }
   }
@@ -183,23 +181,39 @@ export async function fetchSheypoorPostDetail(
   const description = rawDesc;
 
   // Location & Breadcrumbs
-  let cityPersian = 'علی‌آباد کتول';
+  let cityPersian = '';
   let districtPersian = '';
   const breadcrumbs: any[] = attr.breadcrumbs || [];
+  const knownCities = ['علی‌آباد کتول', 'علی آباد کتول', 'تهران', 'گرگان', 'ساری', 'مشهد', 'کرج', 'شیراز', 'اصفهان', 'تبریز', 'اهواز', 'قم', 'رشت', 'بابل', 'آمل', 'گنبد کاووس', 'کردکوی', 'آزادشهر'];
   for (const b of breadcrumbs) {
-    const t = String(b.title || '');
-    if (t.includes('علی‌آباد') || t.includes('علی اباد')) cityPersian = 'علی‌آباد کتول';
-    else if (t.includes('تهران')) cityPersian = 'تهران';
-    else if (t.includes('گرگان')) cityPersian = 'گرگان';
-    else if (t.includes('ساری')) cityPersian = 'ساری';
+    const t = normalizePersianText(String(b.title || ''));
+    const matched = knownCities.find((c) => t.includes(normalizePersianText(c)));
+    if (matched) {
+      cityPersian = matched === 'علی آباد کتول' ? 'علی‌آباد کتول' : matched;
+      break;
+    }
   }
 
-  const locStr = String(attr.location || '');
+  const locStr = String(attr.location || '').trim();
   if (locStr) {
-    const parts = locStr.split(/[\s،,]+/);
-    if (parts.length > 1) {
-      districtPersian = parts[parts.length - 1];
+    const parts = locStr.split(/[،,]+/).map((p) => p.trim()).filter(Boolean);
+    if (!cityPersian && parts.length >= 2) {
+      cityPersian = parts[parts.length - 2];
+    } else if (!cityPersian && parts.length === 1) {
+      cityPersian = parts[0];
     }
+    if (parts.length > 1) {
+      const candidateDistrict = parts[parts.length - 1];
+      if (candidateDistrict && normalizePersianText(candidateDistrict) !== normalizePersianText(cityPersian)) {
+        districtPersian = candidateDistrict;
+      }
+    }
+  }
+  if (!cityPersian && breadcrumbs.length >= 3 && breadcrumbs[2]?.title) {
+    cityPersian = String(breadcrumbs[2].title).trim();
+  }
+  if (!cityPersian) {
+    cityPersian = 'علی‌آباد کتول';
   }
 
   // Pricing
@@ -213,18 +227,20 @@ export async function fetchSheypoorPostDetail(
   if (Array.isArray(priceData)) {
     for (const p of priceData) {
       const label = normalizePersianText(p?.label || '');
-      const amount = extractIntFromPersian(String(p?.amount || '0'));
-      if (label.includes('قیمت') || label.includes('کل')) {
-        totalPrice = amount;
-      } else if (label.includes('رهن') || label.includes('ودیعه')) {
+      const amount = extractIntFromPersian(String(p?.amount ?? p?.value ?? '0'));
+      if (label.includes('رهن') || label.includes('ودیعه')) {
         credit = amount;
       } else if (label.includes('اجاره')) {
         rent = amount;
+      } else if (label.includes('قیمت') || label.includes('کل') || (!label && amount > 0)) {
+        totalPrice = amount;
       }
     }
   } else if (priceData && typeof priceData === 'object') {
-    const amount = extractIntFromPersian(String(priceData.amount || '0'));
+    const amount = extractIntFromPersian(String(priceData.amount ?? priceData.value ?? '0'));
     totalPrice = amount;
+  } else if (typeof priceData === 'number' || typeof priceData === 'string') {
+    totalPrice = extractIntFromPersian(String(priceData));
   }
 
   // Specifications
@@ -254,21 +270,30 @@ export async function fetchSheypoorPostDetail(
       area = extractIntFromPersian(v);
     } else if (k.includes('اتاق') || k.includes('خواب')) {
       bedrooms = v.includes('بدون') ? 0 : extractIntFromPersian(v);
-    } else if (k.includes('ساخت')) {
-      buildYear = extractIntFromPersian(v);
+    } else if (k.includes('ساخت') || k.includes('سن بنا')) {
+      if (k.includes('سن بنا') || v.includes('سال')) {
+        if (v.includes('نوساز')) {
+          buildYear = 1404;
+        } else {
+          const age = extractIntFromPersian(v);
+          if (age >= 0 && age < 100) buildYear = 1404 - age;
+        }
+      } else {
+        buildYear = extractIntFromPersian(v);
+      }
     } else if (k.includes('طبقه')) {
       floorText = v;
       floorNumber = v.includes('همکف') ? 0 : extractIntFromPersian(v);
     } else if (k.includes('واحد در طبقه') || k.includes('تعداد واحد')) {
       unitsPerFloor = v;
     } else if (k.includes('پارکینگ')) {
-      widgetSpecs.parking = v.includes('دارد') || v.includes('بله') || (!v.includes('ندارد') && v.length > 0);
+      widgetSpecs.parking = v.includes('ندارد') ? false : (v.includes('دارد') || v.includes('بله') || v.length > 0);
     } else if (k.includes('آسانسور')) {
-      widgetSpecs.elevator = v.includes('دارد') || v.includes('بله') || (!v.includes('ندارد') && v.length > 0);
+      widgetSpecs.elevator = v.includes('ندارد') ? false : (v.includes('دارد') || v.includes('بله') || v.length > 0);
     } else if (k.includes('انباری')) {
-      widgetSpecs.storage = v.includes('دارد') || v.includes('بله') || (!v.includes('ندارد') && v.length > 0);
+      widgetSpecs.storage = v.includes('ندارد') ? false : (v.includes('دارد') || v.includes('بله') || v.length > 0);
     } else if (k.includes('بالکن') || k.includes('تراس')) {
-      widgetSpecs.balcony = v.includes('دارد') || v.includes('بله') || (!v.includes('ندارد') && v.length > 0);
+      widgetSpecs.balcony = v.includes('ندارد') ? false : (v.includes('دارد') || v.includes('بله') || v.length > 0);
     } else if (k.includes('سند')) {
       deedStatus = v;
     } else if (k.includes('نما')) {
@@ -331,18 +356,22 @@ export async function fetchSheypoorPostDetail(
   const hasConsultant = !!attr.consultant;
   const businessType: 'personal' | 'real_estate' = (isShop || hasConsultant) ? 'real_estate' : 'personal';
 
-  // Timestamp
+  // Timestamp (Sheypoor returns addedAt in local Tehran time without TZ suffix)
   let postTimestamp = Math.floor(Date.now() / 1000);
   if (attr.addedAt) {
-    const parsed = Date.parse(attr.addedAt);
+    const rawTime = String(attr.addedAt).trim();
+    const hasTz = /[Zz]|[+-]\d{2}:?\d{2}$/.test(rawTime);
+    const isoCandidate = hasTz ? rawTime : `${rawTime.replace(' ', 'T')}+03:30`;
+    const parsed = Date.parse(isoCandidate);
     if (!isNaN(parsed)) postTimestamp = Math.floor(parsed / 1000);
   } else if (attr.timePassedLabel) {
     const parsed = parseSheypoorRelativeTime(attr.timePassedLabel);
     if (parsed) postTimestamp = parsed;
   }
 
-  // Category Slug
-  const categorySlug = attr.category_slug || attr.category || 'real-estate';
+  // Category Slug (prefer explicit slug, fallback to breadcrumb category text e.g. خرید و فروش ویلا)
+  const crumbCat = breadcrumbs.length >= 4 ? String(breadcrumbs[3]?.title || '') : '';
+  const categorySlug = `${attr.category_slug || attr.category || ''} ${crumbCat}`.trim() || 'real-estate';
 
   // Merge with NLP fallback from description
   const nlpSpecs = parseDescriptionNLP(description);

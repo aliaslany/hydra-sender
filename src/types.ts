@@ -1,5 +1,6 @@
 export interface Env {
   DB: D1Database;
+  ASSETS?: Fetcher;
   BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   ADMIN_MASTER_TOKEN: string;
@@ -9,6 +10,15 @@ export interface Env {
   DEFAULT_TIMEZONE: string;
   MAX_CHANNEL_MSGS_PER_MIN: string;
   DEFAULT_TOLERANCE_PCT: string;
+}
+
+export interface ChannelBranding {
+  chat_id: string;
+  title?: string | null;
+  contact_mobile?: string | null;
+  contact_phone?: string | null;
+  office_address?: string | null;
+  brand_hashtags?: string[];
 }
 
 export interface Stage2Filters {
@@ -56,6 +66,7 @@ export interface FilterRule {
   show_btn_map?: number;
   show_btn_score?: number;
   show_btn_contact?: number;
+  album_followup_buttons?: number;
   source_divar?: number;
   source_sheypoor?: number;
 }

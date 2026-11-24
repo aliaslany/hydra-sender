@@ -19,6 +19,34 @@ export function normalizePersianText(input: string | undefined | null): string {
     .trim();
 }
 
+export function normalizeCityKey(name: string | undefined | null): string {
+  return normalizePersianText(name)
+    .replace(/آ/g, 'ا')
+    .replace(/[\s_-]+/g, ' ')
+    .trim();
+}
+
+export const CITY_PERSIAN_BY_ID: Record<string, string> = {
+  '1': 'تهران',
+  '2': 'مشهد',
+  '3': 'کرج',
+  '4': 'شیراز',
+  '5': 'اصفهان',
+  '6': 'تبریز',
+  '7': 'اهواز',
+  '8': 'قم',
+  '11': 'رشت',
+  '24': 'گرگان',
+  '25': 'ساری',
+  '823': 'علی آباد کتول'
+};
+
+export function normalizeStringArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof val === 'string' && val.trim()) return [val.trim()];
+  return [];
+}
+
 export function extractIntFromPersian(input: string | undefined | null): number {
   const norm = normalizePersianText(input).replace(/[,٬]/g, '');
   const match = norm.match(/\d+/);
@@ -37,11 +65,13 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   }
 
   // 2. Building Direction (جهت ساختمان)
+  const bStart = '(?:^|[\\s،,.\\-/()])';
+  const bEnd = '(?=$|[\\s،,.\\-/()])';
   if (/(دو\s*کله|دو\s*نبش|شمالی\s*و?\s*جنوبی)/.test(norm)) {
     extracted.direction = 'DUAL';
-  } else if (/\bشمالی\b/.test(norm)) {
+  } else if (new RegExp(`${bStart}شمالی${bEnd}`).test(norm)) {
     extracted.direction = 'NORTH';
-  } else if (/\bجنوبی\b/.test(norm)) {
+  } else if (new RegExp(`${bStart}جنوبی${bEnd}`).test(norm)) {
     extracted.direction = 'SOUTH';
   } else if (/(شرقی|غربی)/.test(norm)) {
     extracted.direction = 'EAST_WEST';
@@ -83,7 +113,7 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   ];
   for (const [key, pattern] of amenities) {
     const negRegex = new RegExp(`(بدون|فاقد|ندارد)\\s+${pattern}|${pattern}\\s+ندارد`);
-    const posRegex = new RegExp(`(دارای|با|فول)\\s+.*?\\b${pattern}\\b|\\b${pattern}\\s+(?:سندی|مزاحم|اختصاصی|دارد)`);
+    const posRegex = new RegExp(`(?:^|[\\s،,.])(?:دارای|با|فول)(?:\\s+[^\\n،.]{0,20})?\\s+${pattern}(?=$|[\\s،,.])|${bStart}${pattern}\\s+(?:سندی|مزاحم|اختصاصی|دارد)(?=$|[\\s،,.])`);
     if (negRegex.test(norm)) {
       extracted[key] = false;
     } else if (posRegex.test(norm)) {
@@ -101,7 +131,7 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   // 1. Property Type
   if (/(مغازه|تجاری|خدماتی|دفتر\s*کار)/.test(norm) || (categorySlug && categorySlug.includes('commercial'))) {
     attrs.propertyTypeFa = /مغازه/.test(norm) ? 'مغازه' : 'تجاری خدماتی';
-  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس|ویلا\s*باغ)/.test(norm) || (categorySlug && (categorySlug.includes('villa') || categorySlug.includes('house-villa')))) {
+  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس|ویلا\s*باغ)/.test(norm) || (categorySlug && (categorySlug.includes('villa') || categorySlug.includes('house-villa') || categorySlug.includes('ویلا')))) {
     attrs.propertyTypeFa = 'ویلایی';
   } else if (/(زمین|کلنگی|مستغلات|چهاردیواری|باغ|کشاورزی|مزرعه)/.test(norm) || (categorySlug && (categorySlug.includes('land') || categorySlug.includes('plot')))) {
     attrs.propertyTypeFa = 'زمین / کلنگی';
@@ -110,10 +140,12 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   }
 
   // 2. Units Per Floor
-  if (/تک\s*واحدی/.test(norm)) attrs.unitsPerFloor = 'تک واحدی';
-  else if (/۲\s*واحدی|دو\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۲ واحدی';
-  else if (/۳\s*واحدی|سه\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۳ واحدی';
-  else if (/۴\s*واحدی|چهار\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۴ واحدی';
+  const unitsKeyMatch = norm.match(/تعداد\s*واحد\s*(?:در\s*طبقه)?\s*[:：]?\s*(\d+)/);
+  if (/تک\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '1') attrs.unitsPerFloor = 'تک واحدی';
+  else if (/2\s*واحدی|دو\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '2') attrs.unitsPerFloor = '۲ واحدی';
+  else if (/3\s*واحدی|سه\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '3') attrs.unitsPerFloor = '۳ واحدی';
+  else if (/4\s*واحدی|چهار\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '4') attrs.unitsPerFloor = '۴ واحدی';
+  else if (unitsKeyMatch?.[1]) attrs.unitsPerFloor = `${unitsKeyMatch[1]} واحدی`;
 
   // 3. Deed Status (وضعیت سند)
   if (/تک\s*برگ/.test(norm)) attrs.deedStatus = 'تک‌برگ';
@@ -161,8 +193,59 @@ export function computeEquivalentRahn(creditToman: number, rentToman: number): n
   return Math.round(creditToman + rentToman / 0.03);
 }
 
+/**
+ * Computes a coarse fingerprint for cross-source deduplication (Divar <-> Sheypoor).
+ * Returns null if price or area are missing so incomplete listings don't collide.
+ */
+export function computeAdFingerprint(ad: ParsedDivarAd): string | null {
+  const effectivePrice = ad.dealType === 'BUY'
+    ? (ad.totalPrice || 0)
+    : computeEquivalentRahn(ad.credit || 0, ad.rent || 0);
+  if (effectivePrice <= 0 || !ad.area || ad.area <= 0) return null;
+
+  const priceStep = ad.dealType === 'BUY' ? 50_000_000 : 5_000_000;
+  const priceBucket = Math.round(effectivePrice / priceStep);
+  const areaBucket = Math.round(ad.area / 5);
+  const cityKey = normalizeCityKey(ad.cityPersian || 'unknown');
+  const beds = ad.bedrooms !== null && ad.bedrooms !== undefined ? String(ad.bedrooms) : 'x';
+  return `${ad.dealType}:${cityKey}:${priceBucket}:${areaBucket}:${beds}`;
+}
+
 export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResult {
   const reasons: string[] = [];
+
+  // ==========================================
+  // Check 0: Strict City Match Enforcement (guards Sheypoor VIP/neighboring city bleed)
+  // ==========================================
+  if (ad.cityPersian) {
+    try {
+      const ruleCitiesRaw: string[] = JSON.parse(rule.city_ids_json || '[]');
+      const allowedNormalized = ruleCitiesRaw
+        .map((c) => CITY_PERSIAN_BY_ID[c] || c)
+        .filter((c) => !/^\d+$/.test(c))
+        .map((c) => normalizeCityKey(c))
+        .filter(Boolean);
+
+      if (allowedNormalized.length > 0) {
+        const adCityNorm = normalizeCityKey(ad.cityPersian);
+        const matchesCity = allowedNormalized.some(
+          (allowed) => adCityNorm === allowed || adCityNorm.includes(allowed) || allowed.includes(adCityNorm)
+        );
+        if (!matchesCity) {
+          return {
+            eligible: false,
+            score: 0,
+            budgetScore: 0,
+            areaScore: 0,
+            specsScore: 0,
+            budgetDeviationPct: 0,
+            areaDeviationPct: 0,
+            reasons: [`شهر آگهی (${ad.cityPersian}) با شهر انتخاب‌شده در فیلتر مطابقت ندارد`]
+          };
+        }
+      }
+    } catch {}
+  }
 
   // ==========================================
   // Check 1: Exclude Real Estate Agency / Broker Ads
@@ -414,45 +497,50 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
     }
   }
 
-  if (s2.skeleton && s2.skeleton.length > 0) {
+  const skelFilter = normalizeStringArray(s2.skeleton);
+  if (skelFilter.length > 0) {
     activeWeight += 2.0;
-    if (ad.specs.skeleton && s2.skeleton.includes(ad.specs.skeleton)) {
+    if (ad.specs.skeleton && skelFilter.includes(ad.specs.skeleton)) {
       earnedWeight += 2.0;
     } else if (!ad.specs.skeleton) {
       earnedWeight += 1.0;
     }
   }
 
-  if (s2.direction && s2.direction.length > 0) {
+  const dirFilter = normalizeStringArray(s2.direction);
+  if (dirFilter.length > 0) {
     activeWeight += 2.0;
-    if (ad.specs.direction && s2.direction.includes(ad.specs.direction)) {
+    if (ad.specs.direction && dirFilter.includes(ad.specs.direction)) {
       earnedWeight += 2.0;
     } else if (!ad.specs.direction) {
       earnedWeight += 1.0;
     }
   }
 
-  if (s2.cabinet && s2.cabinet.length > 0) {
+  const cabFilter = normalizeStringArray(s2.cabinet);
+  if (cabFilter.length > 0) {
     activeWeight += 1.0;
-    if (ad.specs.cabinet && s2.cabinet.includes(ad.specs.cabinet)) {
+    if (ad.specs.cabinet && cabFilter.includes(ad.specs.cabinet)) {
       earnedWeight += 1.0;
     } else if (!ad.specs.cabinet) {
       earnedWeight += 0.5;
     }
   }
 
-  if (s2.cooling && s2.cooling.length > 0) {
+  const coolFilter = normalizeStringArray(s2.cooling);
+  if (coolFilter.length > 0) {
     activeWeight += 0.5;
-    if (ad.specs.cooling && ad.specs.cooling.some((c) => s2.cooling!.includes(c as any))) {
+    if (ad.specs.cooling && ad.specs.cooling.some((c) => coolFilter.includes(c))) {
       earnedWeight += 0.5;
     } else if (!ad.specs.cooling) {
       earnedWeight += 0.25;
     }
   }
 
-  if (s2.heating && s2.heating.length > 0) {
+  const heatFilter = normalizeStringArray(s2.heating);
+  if (heatFilter.length > 0) {
     activeWeight += 0.5;
-    if (ad.specs.heating && ad.specs.heating.some((h) => s2.heating!.includes(h as any))) {
+    if (ad.specs.heating && ad.specs.heating.some((h) => heatFilter.includes(h))) {
       earnedWeight += 0.5;
     } else if (!ad.specs.heating) {
       earnedWeight += 0.25;

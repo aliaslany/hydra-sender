@@ -1,9 +1,8 @@
-import { Env, FilterRule, ParsedDivarAd } from '../types';
+import { ChannelBranding, Env, FilterRule, ParsedDivarAd } from '../types';
 import { fetchDivarPostDetail } from '../divar/scraper';
 import { fetchSheypoorPostDetail } from '../sheypoor/scraper';
-import { evaluateAdMatch } from '../engine/scorer';
+import { evaluateAdMatch, normalizeStringArray } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
-import { runScheduledTick } from '../cron/scheduler';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +15,73 @@ function jsonResponse(data: any, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS }
   });
+}
+
+function normalizeStage2Input(raw: any): Record<string, any> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, any> = { ...raw };
+  for (const arrayKey of ['skeleton', 'direction', 'cabinet', 'cooling', 'heating']) {
+    if (out[arrayKey] !== undefined && out[arrayKey] !== null) {
+      const arr = normalizeStringArray(out[arrayKey]);
+      if (arr.length > 0) out[arrayKey] = arr;
+      else delete out[arrayKey];
+    }
+  }
+  if (Array.isArray(out.bedrooms)) {
+    out.bedrooms = out.bedrooms.map((n: any) => Number(n)).filter((n: number) => !isNaN(n));
+    if (out.bedrooms.length === 0) delete out.bedrooms;
+  }
+  if (out.min_build_year !== undefined) {
+    const y = Number(out.min_build_year);
+    if (y > 0) out.min_build_year = y;
+    else delete out.min_build_year;
+  }
+  if (Array.isArray(out.floor_range) && out.floor_range.length === 2) {
+    const a = Number(out.floor_range[0]);
+    const b = Number(out.floor_range[1]);
+    if (!isNaN(a) && !isNaN(b) && b >= a) out.floor_range = [a, b];
+    else delete out.floor_range;
+  }
+  return out;
+}
+
+function parseBrandingRow(row: any): ChannelBranding | null {
+  if (!row) return null;
+  let tags: string[] = [];
+  try {
+    const parsed = JSON.parse(row.brand_hashtags_json || '[]');
+    if (Array.isArray(parsed)) tags = parsed.map(String);
+  } catch {}
+  return {
+    chat_id: row.chat_id,
+    title: row.title,
+    contact_mobile: row.contact_mobile,
+    contact_phone: row.contact_phone,
+    office_address: row.office_address,
+    brand_hashtags: tags
+  };
+}
+
+async function resetRuleSyncState(db: D1Database, ruleId: string): Promise<void> {
+  await db.batch([
+    db.prepare(
+      `UPDATE sync_state
+       SET phase = 'BACKFILL',
+           backfill_queued_count = 0,
+           backfill_dispatched_count = 0,
+           pagination_cursor_date = null,
+           pagination_page = 1,
+           sheypoor_page = 1,
+           consecutive_errors = 0,
+           last_error_msg = null,
+           next_retry_at = 0,
+           is_auto_paused = 0
+       WHERE rule_id = ?`
+    ).bind(ruleId),
+    db.prepare(
+      `DELETE FROM sent_ads WHERE rule_id = ? AND status IN ('SKIPPED', 'FAILED')`
+    ).bind(ruleId)
+  ]);
 }
 
 export async function handleAdminApi(request: Request, env: Env): Promise<Response> {
@@ -39,7 +105,8 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         env.DB.prepare(`SELECT COUNT(*) as cnt FROM subscriptions WHERE status = 'ACTIVE'`),
         env.DB.prepare(`SELECT COUNT(*) as cnt FROM channels WHERE is_enabled = 1`),
         env.DB.prepare(
-          `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_dispatched_count, s.consecutive_errors, s.last_error_msg, s.last_polled_at
+          `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_dispatched_count,
+                  s.consecutive_errors, s.last_error_msg, s.last_polled_at, s.is_auto_paused, s.next_retry_at
            FROM filter_rules r
            LEFT JOIN channels c ON r.channel_id = c.id
            LEFT JOIN sync_state s ON r.id = s.rule_id
@@ -59,6 +126,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       const rules = (rulesRows.results || []) as any[];
       const backfillRules = rules.filter((r) => r.phase === 'BACKFILL').length;
       const liveRules = rules.filter((r) => r.phase === 'LIVE').length;
+      const errorRules = rules.filter((r) => Number(r.is_auto_paused) === 1 || Number(r.consecutive_errors) > 0).length;
 
       return jsonResponse({
         overview: {
@@ -66,6 +134,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           activeChannels: (chCount.results?.[0] as any)?.cnt || 0,
           backfillRules,
           liveRules,
+          errorRules,
           adsSentToday: (sentToday.results?.[0] as any)?.cnt || 0
         },
         rules,
@@ -73,22 +142,29 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       });
     }
 
-    // 1.5. GET /api/admin/activities (Endless Scroll & Live Stream)
+    // 1.5. GET /api/admin/activities (Server-Filtered Endless Scroll & Live Stream)
     if (path === '/api/admin/activities' && request.method === 'GET') {
       const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10));
       const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
       const since = parseInt(url.searchParams.get('since') || '0', 10);
+      const statusFilter = (url.searchParams.get('status') || '').toUpperCase().trim();
+      const validStatuses = ['SENT', 'QUEUED', 'SKIPPED', 'FAILED'];
+      const hasStatusFilter = validStatuses.includes(statusFilter);
 
       if (since > 0) {
-        const recent = await env.DB.prepare(
-          `SELECT sa.*, r.name as rule_name, c.chat_id
-           FROM sent_ads sa
-           LEFT JOIN filter_rules r ON sa.rule_id = r.id
-           LEFT JOIN channels c ON sa.channel_id = c.id
-           WHERE sa.discovered_at > ?
-           ORDER BY sa.discovered_at DESC, sa.rowid DESC
-           LIMIT 50`
-        ).bind(since).all();
+        const sql = `SELECT sa.rule_id, sa.channel_id, sa.post_token, sa.match_score, sa.status,
+                            sa.telegram_message_id, sa.last_error_msg, sa.discovered_at, sa.sent_at,
+                            r.name as rule_name, c.chat_id
+                     FROM sent_ads sa
+                     LEFT JOIN filter_rules r ON sa.rule_id = r.id
+                     LEFT JOIN channels c ON sa.channel_id = c.id
+                     WHERE sa.discovered_at > ? ${hasStatusFilter ? 'AND sa.status = ?' : ''}
+                     ORDER BY sa.discovered_at DESC, sa.rowid DESC
+                     LIMIT 50`;
+        const stmt = hasStatusFilter
+          ? env.DB.prepare(sql).bind(since, statusFilter)
+          : env.DB.prepare(sql).bind(since);
+        const recent = await stmt.all();
 
         return jsonResponse({
           ok: true,
@@ -97,16 +173,25 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         });
       }
 
+      const whereClause = hasStatusFilter ? `WHERE sa.status = ?` : '';
+      const listSql = `SELECT sa.rule_id, sa.channel_id, sa.post_token, sa.match_score, sa.status,
+                              sa.telegram_message_id, sa.last_error_msg, sa.discovered_at, sa.sent_at,
+                              r.name as rule_name, c.chat_id
+                       FROM sent_ads sa
+                       LEFT JOIN filter_rules r ON sa.rule_id = r.id
+                       LEFT JOIN channels c ON sa.channel_id = c.id
+                       ${whereClause}
+                       ORDER BY sa.discovered_at DESC, sa.rowid DESC
+                       LIMIT ? OFFSET ?`;
+      const countSql = `SELECT count(*) as total FROM sent_ads sa ${whereClause}`;
+
       const [rowsRes, countRes] = await env.DB.batch([
-        env.DB.prepare(
-          `SELECT sa.*, r.name as rule_name, c.chat_id
-           FROM sent_ads sa
-           LEFT JOIN filter_rules r ON sa.rule_id = r.id
-           LEFT JOIN channels c ON sa.channel_id = c.id
-           ORDER BY sa.discovered_at DESC, sa.rowid DESC
-           LIMIT ? OFFSET ?`
-        ).bind(limit, offset),
-        env.DB.prepare(`SELECT count(*) as total FROM sent_ads`)
+        hasStatusFilter
+          ? env.DB.prepare(listSql).bind(statusFilter, limit, offset)
+          : env.DB.prepare(listSql).bind(limit, offset),
+        hasStatusFilter
+          ? env.DB.prepare(countSql).bind(statusFilter)
+          : env.DB.prepare(countSql)
       ]);
 
       const total = Number((countRes.results?.[0] as any)?.total || 0);
@@ -122,10 +207,61 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       });
     }
 
+    // 1.6. POST /api/admin/activities/retry-failed
+    if (path === '/api/admin/activities/retry-failed' && request.method === 'POST') {
+      const body: any = await request.json().catch(() => ({}));
+      if (body.rule_id && body.post_token) {
+        const res = await env.DB.prepare(
+          `UPDATE sent_ads SET status = 'QUEUED', last_error_msg = NULL WHERE rule_id = ? AND post_token = ? AND status = 'FAILED' AND card_payload_json IS NOT NULL`
+        ).bind(String(body.rule_id), String(body.post_token)).run();
+        return jsonResponse({ ok: true, requeued: res.meta?.changes || 0 });
+      }
+      const cutoff = Math.floor(Date.now() / 1000) - 48 * 3600;
+      const res = await env.DB.prepare(
+        `UPDATE sent_ads
+         SET status = 'QUEUED', last_error_msg = NULL
+         WHERE status = 'FAILED' AND discovered_at >= ? AND card_payload_json IS NOT NULL`
+      ).bind(cutoff).run();
+      return jsonResponse({ ok: true, requeued: res.meta?.changes || 0 });
+    }
+
+    // 1.7. GET /api/admin/logs & POST /api/admin/logs/clear
+    if (path === '/api/admin/logs' && request.method === 'GET') {
+      const limit = Math.min(100, Math.max(10, parseInt(url.searchParams.get('limit') || '50', 10)));
+      const [logsRes, errRulesRes] = await env.DB.batch([
+        env.DB.prepare(
+          `SELECT l.*, r.name as rule_name
+           FROM system_logs l
+           LEFT JOIN filter_rules r ON l.rule_id = r.id
+           ORDER BY l.id DESC
+           LIMIT ?`
+        ).bind(limit),
+        env.DB.prepare(
+          `SELECT r.id, r.name, s.phase, s.consecutive_errors, s.last_error_msg, s.is_auto_paused, s.next_retry_at, c.chat_id
+           FROM sync_state s
+           JOIN filter_rules r ON s.rule_id = r.id
+           LEFT JOIN channels c ON r.channel_id = c.id
+           WHERE s.consecutive_errors > 0 OR COALESCE(s.is_auto_paused, 0) = 1 OR s.last_error_msg IS NOT NULL
+           ORDER BY s.consecutive_errors DESC`
+        )
+      ]);
+      return jsonResponse({
+        ok: true,
+        logs: logsRes.results || [],
+        erroredRules: errRulesRes.results || []
+      });
+    }
+
+    if (path === '/api/admin/logs/clear' && request.method === 'POST') {
+      await env.DB.prepare(`DELETE FROM system_logs`).run();
+      return jsonResponse({ ok: true });
+    }
+
     // 2. GET & POST /api/admin/rules
     if (path === '/api/admin/rules' && request.method === 'GET') {
       const res = await env.DB.prepare(
-        `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_dispatched_count, s.consecutive_errors, s.last_error_msg
+        `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_dispatched_count,
+                s.consecutive_errors, s.last_error_msg, s.is_auto_paused, s.next_retry_at
          FROM filter_rules r
          LEFT JOIN channels c ON r.channel_id = c.id
          LEFT JOIN sync_state s ON r.id = s.rule_id
@@ -140,12 +276,10 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       const ownerId = Number(body.owner_user_id) || 1000000;
       const ruleId = `rule_${Date.now()}`;
 
-      // 1. Ensure user exists
       await env.DB.prepare(
         `INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`
       ).bind(ownerId).run();
 
-      // 2. Ensure channel exists and retrieve canonical channel ID
       let channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
       const existingCh: any = await env.DB.prepare(`SELECT id FROM channels WHERE chat_id = ?`).bind(chatId).first();
       if (existingCh) {
@@ -158,6 +292,8 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         ).bind(channelId, ownerId, chatId, chatId).run();
       }
 
+      const stage2 = normalizeStage2Input(body.stage2_filters);
+
       await env.DB.batch([
         env.DB.prepare(
           `INSERT INTO filter_rules (
@@ -167,8 +303,8 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
             tolerance_pct, min_match_score, stage2_filters_json,
             geo_polygon_json, exclude_agency, max_post_age_hours, negative_keywords_json,
             show_btn_divar, show_btn_map, show_btn_score, show_btn_contact,
-            source_divar, source_sheypoor
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            album_followup_buttons, source_divar, source_sheypoor
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           ruleId,
           channelId,
@@ -187,7 +323,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           Number(body.max_area) || 0,
           Number(body.tolerance_pct) || 0.15,
           Number(body.min_match_score) || 65,
-          JSON.stringify(body.stage2_filters || {}),
+          JSON.stringify(stage2),
           body.geo_polygon_json || null,
           body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
           Number(body.max_post_age_hours) || 24,
@@ -196,6 +332,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           body.show_btn_map !== undefined ? Number(body.show_btn_map) : 1,
           body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
           body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1,
+          body.album_followup_buttons !== undefined ? Number(body.album_followup_buttons) : 0,
           body.source_divar !== undefined ? Number(body.source_divar) : 1,
           body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : 1
         ),
@@ -211,23 +348,26 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
     const matchResetBackfill = path.match(/^\/api\/admin\/rules\/([^\/]+)\/reset-backfill$/);
     if (matchResetBackfill && request.method === 'POST') {
       const ruleId = matchResetBackfill[1];
-      await env.DB.batch([
-        env.DB.prepare(
-          `UPDATE sync_state
-           SET phase = 'BACKFILL',
-               backfill_queued_count = 0,
-               backfill_dispatched_count = 0,
-               pagination_cursor_date = null,
-               pagination_page = 1,
-               consecutive_errors = 0,
-               last_error_msg = null
-           WHERE rule_id = ?`
-        ).bind(ruleId),
-        env.DB.prepare(
-          `DELETE FROM sent_ads WHERE rule_id = ? AND status IN ('SKIPPED', 'FAILED')`
-        ).bind(ruleId)
-      ]);
+      await resetRuleSyncState(env.DB, ruleId);
       return jsonResponse({ ok: true, rule_id: ruleId, phase: 'BACKFILL' });
+    }
+
+    // Resume Auto-Paused / Errored Rule: POST /api/admin/rules/:id/resume
+    const matchRuleResume = path.match(/^\/api\/admin\/rules\/([^\/]+)\/resume$/);
+    if (matchRuleResume && request.method === 'POST') {
+      const ruleId = matchRuleResume[1];
+      await env.DB.prepare(
+        `UPDATE sync_state
+         SET phase = CASE WHEN phase = 'ERROR' THEN 'LIVE' ELSE phase END,
+             pagination_page = 1,
+             sheypoor_page = 1,
+             consecutive_errors = 0,
+             last_error_msg = NULL,
+             next_retry_at = 0,
+             is_auto_paused = 0
+         WHERE rule_id = ?`
+      ).bind(ruleId).run();
+      return jsonResponse({ ok: true, rule_id: ruleId });
     }
 
     // Edit Rule: PUT /api/admin/rules/:id
@@ -236,28 +376,11 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       const ruleId = matchRuleId[1];
       const body: any = await request.json();
 
-      // If called with only { reset_backfill: true }
       if (body.reset_backfill === true && !body.name) {
-        await env.DB.batch([
-          env.DB.prepare(
-            `UPDATE sync_state
-             SET phase = 'BACKFILL',
-                 backfill_queued_count = 0,
-                 backfill_dispatched_count = 0,
-                 pagination_cursor_date = null,
-                 pagination_page = 1,
-                 consecutive_errors = 0,
-                 last_error_msg = null
-             WHERE rule_id = ?`
-          ).bind(ruleId),
-          env.DB.prepare(
-            `DELETE FROM sent_ads WHERE rule_id = ? AND status IN ('SKIPPED', 'FAILED')`
-          ).bind(ruleId)
-        ]);
+        await resetRuleSyncState(env.DB, ruleId);
         return jsonResponse({ ok: true, rule_id: ruleId, phase: 'BACKFILL' });
       }
 
-      // Full rule update
       const existing: any = await env.DB.prepare(`SELECT * FROM filter_rules WHERE id = ?`).bind(ruleId).first();
       if (!existing) {
         return jsonResponse({ error: 'قانون فیلتر یافت نشد' }, 404);
@@ -279,12 +402,9 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         }
       }
 
-      const updatedName = body.name || existing.name;
-      const updatedSlug = body.divar_category_slug || existing.divar_category_slug;
-      const updatedDealType = body.deal_type || existing.deal_type;
-      const updatedPropType = body.property_type || existing.property_type;
-      const updatedCities = body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]');
-      const updatedDistricts = body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]');
+      const stage2Json = body.stage2_filters
+        ? JSON.stringify(normalizeStage2Input(body.stage2_filters))
+        : (existing.stage2_filters_json ?? '{}');
 
       await env.DB.prepare(
         `UPDATE filter_rules SET
@@ -312,18 +432,19 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
           show_btn_map = ?,
           show_btn_score = ?,
           show_btn_contact = ?,
+          album_followup_buttons = ?,
           source_divar = ?,
           source_sheypoor = ?,
           updated_at = unixepoch()
         WHERE id = ?`
       ).bind(
         updatedChannelId,
-        updatedName,
-        updatedSlug,
-        updatedDealType,
-        updatedPropType,
-        updatedCities,
-        updatedDistricts,
+        body.name || existing.name,
+        body.divar_category_slug || existing.divar_category_slug,
+        body.deal_type || existing.deal_type,
+        body.property_type || existing.property_type,
+        body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]'),
+        body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]'),
         body.min_budget !== undefined ? (Number(body.min_budget) || 0) : (Number(existing.min_budget) || 0),
         body.max_budget !== undefined ? (Number(body.max_budget) || 0) : (Number(existing.max_budget) || 0),
         body.min_rent !== undefined ? (Number(body.min_rent) || 0) : (Number(existing.min_rent) || 0),
@@ -332,7 +453,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         body.max_area !== undefined ? (Number(body.max_area) || 0) : (Number(existing.max_area) || 0),
         body.tolerance_pct !== undefined ? (Number(body.tolerance_pct) || 0.15) : (Number(existing.tolerance_pct) || 0.15),
         body.min_match_score !== undefined ? (Number(body.min_match_score) || 65) : (Number(existing.min_match_score) || 65),
-        body.stage2_filters ? JSON.stringify(body.stage2_filters) : (existing.stage2_filters_json ?? '{}'),
+        stage2Json,
         body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : (existing.geo_polygon_json ?? null),
         body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
         body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
@@ -341,28 +462,14 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
         body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
         body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
+        body.album_followup_buttons !== undefined ? Number(body.album_followup_buttons) : (Number(existing.album_followup_buttons) || 0),
         body.source_divar !== undefined ? Number(body.source_divar) : (existing.source_divar !== undefined ? Number(existing.source_divar) : 1),
         body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : (existing.source_sheypoor !== undefined ? Number(existing.source_sheypoor) : 1),
         ruleId
       ).run();
 
       if (body.reset_backfill === true) {
-        await env.DB.batch([
-          env.DB.prepare(
-            `UPDATE sync_state
-             SET phase = 'BACKFILL',
-                 backfill_queued_count = 0,
-                 backfill_dispatched_count = 0,
-                 pagination_cursor_date = null,
-                 pagination_page = 1,
-                 consecutive_errors = 0,
-                 last_error_msg = null
-             WHERE rule_id = ?`
-          ).bind(ruleId),
-          env.DB.prepare(
-            `DELETE FROM sent_ads WHERE rule_id = ? AND status IN ('SKIPPED', 'FAILED')`
-          ).bind(ruleId)
-        ]);
+        await resetRuleSyncState(env.DB, ruleId);
       }
 
       return jsonResponse({ ok: true, rule_id: ruleId });
@@ -384,7 +491,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       return jsonResponse({ ok: true, rule_id: ruleId, is_active: updated?.is_active });
     }
 
-    // 3. Channels Management: GET & POST & DELETE /api/admin/channels
+    // 3. Channels Management: GET, POST, PUT, DELETE /api/admin/channels
     if (path === '/api/admin/channels' && request.method === 'GET') {
       const res = await env.DB.prepare(
         `SELECT c.*, u.username as owner_username, u.full_name as owner_name,
@@ -404,16 +511,58 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       if (!chatId) return jsonResponse({ error: 'chat_id is required' }, 400);
       const channelId = `ch_${chatId.replace(/[^a-zA-Z0-9]/g, '')}`;
       const ownerId = Number(body.owner_user_id) || 1000000;
+      const hashtagsJson = Array.isArray(body.brand_hashtags) ? JSON.stringify(body.brand_hashtags) : null;
 
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO users (telegram_id, role) VALUES (?, 'SUPERADMIN') ON CONFLICT(telegram_id) DO NOTHING`).bind(ownerId),
         env.DB.prepare(
-          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled)
-           VALUES (?, ?, ?, ?, 1, 1, 1)
-           ON CONFLICT(chat_id) DO UPDATE SET is_enabled=1, title=excluded.title`
-        ).bind(channelId, ownerId, chatId, body.title || chatId)
+          `INSERT INTO channels (id, owner_user_id, chat_id, title, bot_is_admin, can_post_messages, is_enabled, contact_mobile, contact_phone, office_address, brand_hashtags_json)
+           VALUES (?, ?, ?, ?, 1, 1, 1, ?, ?, ?, ?)
+           ON CONFLICT(chat_id) DO UPDATE SET
+             is_enabled = 1,
+             title = excluded.title,
+             contact_mobile = COALESCE(excluded.contact_mobile, channels.contact_mobile),
+             contact_phone = COALESCE(excluded.contact_phone, channels.contact_phone),
+             office_address = COALESCE(excluded.office_address, channels.office_address),
+             brand_hashtags_json = COALESCE(excluded.brand_hashtags_json, channels.brand_hashtags_json)`
+        ).bind(
+          channelId,
+          ownerId,
+          chatId,
+          body.title || chatId,
+          body.contact_mobile || null,
+          body.contact_phone || null,
+          body.office_address || null,
+          hashtagsJson
+        )
       ]);
-      return jsonResponse({ ok: true, channel_id: channelId });
+
+      return jsonResponse({ ok: true, channel_id: channelId, chat_id: chatId });
+    }
+
+    const matchChannelPut = path.match(/^\/api\/admin\/channels\/([^\/]+)$/);
+    if (matchChannelPut && request.method === 'PUT') {
+      const chId = matchChannelPut[1];
+      const body: any = await request.json();
+      const hashtagsJson = Array.isArray(body.brand_hashtags) ? JSON.stringify(body.brand_hashtags) : null;
+
+      await env.DB.prepare(
+        `UPDATE channels
+         SET title = COALESCE(?, title),
+             contact_mobile = ?,
+             contact_phone = ?,
+             office_address = ?,
+             brand_hashtags_json = ?
+         WHERE id = ?`
+      ).bind(
+        body.title ? String(body.title).trim() : null,
+        body.contact_mobile ? String(body.contact_mobile).trim() : null,
+        body.contact_phone ? String(body.contact_phone).trim() : null,
+        body.office_address ? String(body.office_address).trim() : null,
+        hashtagsJson,
+        chId
+      ).run();
+      return jsonResponse({ ok: true, channel_id: chId });
     }
 
     const matchChannelToggle = path.match(/^\/api\/admin\/channels\/([^\/]+)\/toggle$/);
@@ -475,7 +624,6 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       return jsonResponse({ ok: true, user_id: userId, plan_id: planId });
     }
 
-    // Toggle Ban User: POST /api/admin/users/:id/toggle-ban
     const matchUserBan = path.match(/^\/api\/admin\/users\/([^\/]+)\/toggle-ban$/);
     if (matchUserBan && request.method === 'POST') {
       const userId = Number(matchUserBan[1]);
@@ -484,23 +632,26 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
       return jsonResponse({ ok: true, user_id: userId, is_banned: updated?.is_banned });
     }
 
-    // 5. POST /api/admin/test-score (Live Divar Ad Simulator)
+    // 5. POST /api/admin/test-score (Live Divar / Sheypoor Simulator)
     if (path === '/api/admin/test-score' && request.method === 'POST') {
       const body: any = await request.json();
       const postToken: string = (body.token || '').trim();
       if (!postToken) return jsonResponse({ error: 'Token is required' }, 400);
 
       const ruleRow: any = body.rule_id
-        ? await env.DB.prepare(`SELECT * FROM filter_rules WHERE id = ?`).bind(body.rule_id).first()
+        ? await env.DB.prepare(
+            `SELECT r.*, c.chat_id as ch_chat_id, c.title as ch_title, c.contact_mobile, c.contact_phone, c.office_address, c.brand_hashtags_json
+             FROM filter_rules r LEFT JOIN channels c ON r.channel_id = c.id WHERE r.id = ?`
+          ).bind(body.rule_id).first()
         : null;
 
-      const mockRule: FilterRule = ruleRow || {
+      const baseRule: FilterRule = ruleRow || {
         id: 'sim_rule',
         channel_id: 'sim_ch',
         owner_user_id: 1,
         name: 'شبیه‌ساز',
         is_active: 1,
-        city_ids_json: '["823"]',
+        city_ids_json: body.city_ids ? JSON.stringify(body.city_ids) : '["823"]',
         districts_json: '[]',
         deal_type: body.deal_type || 'BUY',
         property_type: body.property_type || 'APARTMENT',
@@ -515,7 +666,7 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         max_area: Number(body.max_area) || 140,
         tolerance_pct: Number(body.tolerance_pct) || 0.15,
         min_match_score: Number(body.min_match_score) || 65,
-        stage2_filters_json: JSON.stringify(body.stage2_filters || { parking: true, elevator: true, storage: true }),
+        stage2_filters_json: JSON.stringify(normalizeStage2Input(body.stage2_filters || { parking: true, elevator: true, storage: true })),
         geo_polygon_json: body.geo_polygon_json || null,
         exclude_agency: body.exclude_agency !== undefined ? Number(body.exclude_agency) : 1,
         max_post_age_hours: Number(body.max_post_age_hours) || 24,
@@ -525,6 +676,17 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         show_btn_score: body.show_btn_score !== undefined ? Number(body.show_btn_score) : 1,
         show_btn_contact: body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : 1
       };
+
+      // Allow simulator UI button toggles / overrides even when testing against a saved rule_id
+      const mockRule: FilterRule = ruleRow
+        ? {
+            ...baseRule,
+            show_btn_divar: body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : baseRule.show_btn_divar,
+            show_btn_map: body.show_btn_map !== undefined ? Number(body.show_btn_map) : baseRule.show_btn_map,
+            show_btn_score: body.show_btn_score !== undefined ? Number(body.show_btn_score) : baseRule.show_btn_score,
+            show_btn_contact: body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : baseRule.show_btn_contact
+          }
+        : baseRule;
 
       const isSheypoor = postToken.startsWith('sp_') ||
                          postToken.includes('sheypoor.com') ||
@@ -546,10 +708,17 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         }, 404);
       }
 
+      const branding = ruleRow ? parseBrandingRow({ ...ruleRow, chat_id: ruleRow.ch_chat_id }) : null;
+      const previewChannel = ruleRow?.ch_chat_id || body.channel_id || '@aliabadmelk';
       const matchResult = evaluateAdMatch(ad, mockRule);
-      const cardPreview = buildTelegramCardPayload(ad, matchResult, mockRule, body.channel_id || '@preview_channel', false);
+      const cardPreview = buildTelegramCardPayload(ad, matchResult, mockRule, previewChannel, false, branding);
 
-      return jsonResponse({ ad, matchResult, cardPreview });
+      return jsonResponse({
+        ad,
+        matchResult,
+        cardPreview,
+        rulePolygonJson: mockRule.geo_polygon_json || null
+      });
     }
 
     // 6. Verify Telegram Channel & Bot Admin Permissions

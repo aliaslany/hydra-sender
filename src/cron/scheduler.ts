@@ -1,226 +1,239 @@
-import { Env, FilterRule } from '../types';
+import { ChannelBranding, Env, FilterRule } from '../types';
 import { fetchDivarPostDetail, searchDivarPostList } from '../divar/scraper';
 import { fetchSheypoorPostDetail, searchSheypoorPostList } from '../sheypoor/scraper';
-import { evaluateAdMatch } from '../engine/scorer';
+import { computeAdFingerprint, evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 
-export async function runScheduledTick(env: Env): Promise<void> {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const tehranDay = new Intl.DateTimeFormat('en-CA', { timeZone: env.DEFAULT_TIMEZONE || 'Asia/Tehran' }).format(new Date());
+const MAX_SUBREQUESTS_PER_TICK = 42; // Safe headroom under Cloudflare Workers Free Plan's 50 cap
+const MAX_AUTO_PAUSE_ERRORS = 15;
+const DEDUP_WINDOW_SECONDS = 72 * 3600;
+const SKIPPED_RETENTION_SECONDS = 14 * 86400;
 
-  // 1. Reset daily search quotas on Tehran midnight boundary & expire elapsed subscriptions
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE subscriptions SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at < ?`).bind(nowSec),
-    env.DB.prepare(
-      `UPDATE subscriptions SET searches_used_today = 0, last_quota_reset_day = ?
-       WHERE status = 'ACTIVE' AND last_quota_reset_day != ?`
-    ).bind(tehranDay, tehranDay)
-  ]);
+interface SubrequestBudget {
+  used: number;
+  readonly max: number;
+}
 
-  // 2. Select up to 2 active rules per minute (keeps external subrequests <= 37 on Free Plan)
-  const activeRulesRes = await env.DB.prepare(
-    `SELECT r.*, c.chat_id, s.phase, s.backfill_target_count, s.backfill_queued_count,
-            s.pagination_cursor_date, s.pagination_page, s.search_uid, s.last_watermark_timestamp,
-            sub.id as sub_id,
-            COALESCE(sub.searches_used_today, 0) as searches_used_today,
-            COALESCE(sub.total_ads_sent, 0) as total_ads_sent,
-            sub.max_total_searches,
-            COALESCE(p.daily_ad_quota, 1000) as daily_ad_quota
-     FROM filter_rules r
-     JOIN channels c ON r.channel_id = c.id
-     JOIN sync_state s ON r.id = s.rule_id
-     LEFT JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
-     LEFT JOIN plans p ON sub.plan_id = p.id
-     WHERE r.is_active = 1 AND c.is_enabled = 1 AND s.phase IN ('BACKFILL', 'LIVE')
-     ORDER BY s.last_polled_at ASC
-     LIMIT 2`
-  ).all();
+function parseRuleBranding(row: any): ChannelBranding {
+  let hashtags: string[] = [];
+  try {
+    const parsed = JSON.parse(row.brand_hashtags_json || '[]');
+    if (Array.isArray(parsed)) hashtags = parsed.map(String);
+  } catch {}
+  return {
+    chat_id: row.chat_id,
+    title: row.channel_title,
+    contact_mobile: row.contact_mobile,
+    contact_phone: row.contact_phone,
+    office_address: row.office_address,
+    brand_hashtags: hashtags
+  };
+}
 
-  const rules = (activeRulesRes.results || []) as any[];
-  let detailFetchesUsed = 0;
-  const MAX_DETAIL_FETCHES_PER_TICK = 20;
+async function fetchExistingTokensSet(
+  db: D1Database,
+  ruleId: string,
+  tokens: string[]
+): Promise<Set<string>> {
+  const seen = new Set<string>();
+  if (tokens.length === 0) return seen;
 
-  for (const row of rules) {
-    if (row.searches_used_today >= row.daily_ad_quota) continue;
-    if (row.max_total_searches && row.total_ads_sent >= row.max_total_searches) continue;
+  // Batch in chunks of 40 to stay well within SQLite bind parameter limits
+  for (let i = 0; i < tokens.length; i += 40) {
+    const slice = tokens.slice(i, i + 40);
+    const placeholders = slice.map(() => '?').join(',');
+    const res = await db
+      .prepare(`SELECT post_token FROM sent_ads WHERE rule_id = ? AND post_token IN (${placeholders})`)
+      .bind(ruleId, ...slice)
+      .all();
+    for (const row of (res.results || []) as any[]) {
+      if (row?.post_token) seen.add(String(row.post_token));
+    }
+  }
+  return seen;
+}
 
-    try {
-      const isBackfill = row.phase === 'BACKFILL';
-      const useDivar = row.source_divar !== 0;
-      const useSheypoor = row.source_sheypoor !== 0;
+function isTelegramMediaError(desc: string): boolean {
+  const lower = desc.toLowerCase();
+  return (
+    lower.includes('webpage_media_empty') ||
+    lower.includes('wrong type of the web page content') ||
+    lower.includes('image_process_failed') ||
+    lower.includes('failed to send message #') ||
+    lower.includes('wrong file identifier') ||
+    lower.includes('media_empty') ||
+    lower.includes('webpage_curl_failed')
+  );
+}
 
-      const candidateTokens: string[] = [];
-      let nextCursorDate: string | null = null;
-      let searchUid: string | null = null;
+async function callTelegramMethod(
+  env: Env,
+  method: string,
+  body: Record<string, any>,
+  budget: SubrequestBudget
+): Promise<{ ok: boolean; status: number; json: any }> {
+  budget.used++;
+  const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const tgJson: any = await tgRes.json().catch(() => ({}));
+  return { ok: tgRes.ok && tgJson?.ok === true, status: tgRes.status, json: tgJson };
+}
 
-      // 1. Fetch Divar candidates if enabled
-      if (useDivar) {
-        try {
-          const divarPagination = isBackfill && row.pagination_cursor_date && !row.pagination_cursor_date.startsWith('sp_')
-            ? { lastPostDate: row.pagination_cursor_date, page: Number(row.pagination_page) || 1, searchUid: row.search_uid }
-            : undefined;
+async function dispatchTelegramWithFallback(
+  env: Env,
+  payload: { method: string; body: Record<string, any> },
+  followupButtons: boolean,
+  budget: SubrequestBudget
+): Promise<{ ok: boolean; rateLimited?: boolean; retryAfter?: number; msgId?: number; error?: string }> {
+  const replyMarkup = payload.body?.reply_markup;
+  const primaryBody = { ...payload.body };
+  if (payload.method === 'sendMediaGroup') {
+    delete primaryBody.reply_markup;
+  }
 
-          const searchRes = await searchDivarPostList(row as FilterRule, env, divarPagination);
-          const divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
-          candidateTokens.push(...divarTokens);
-          nextCursorDate = searchRes.nextCursorDate;
-          searchUid = searchRes.searchUid;
-        } catch (de: any) {
-          console.error(`Divar search error for rule ${row.id}:`, de?.message || de);
-        }
+  let res = await callTelegramMethod(env, payload.method, primaryBody, budget);
+  if (res.status === 429 || res.json?.error_code === 429) {
+    return { ok: false, rateLimited: true, retryAfter: res.json?.parameters?.retry_after || 5 };
+  }
+
+  // Fallback 1: sendMediaGroup media rejection -> single sendPhoto with primary caption/keyboard
+  if (!res.ok && payload.method === 'sendMediaGroup') {
+    const errDesc = String(res.json?.description || `HTTP ${res.status}`);
+    if (isTelegramMediaError(errDesc) && Array.isArray(payload.body?.media) && payload.body.media.length > 0 && budget.used < budget.max) {
+      const firstMedia = payload.body.media[0];
+      res = await callTelegramMethod(env, 'sendPhoto', {
+        chat_id: payload.body.chat_id,
+        photo: firstMedia.media,
+        caption: firstMedia.caption || '',
+        parse_mode: 'HTML',
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+      }, budget);
+      if (res.status === 429 || res.json?.error_code === 429) {
+        return { ok: false, rateLimited: true, retryAfter: res.json?.parameters?.retry_after || 5 };
       }
 
-      // 2. Fetch Sheypoor candidates if enabled
-      if (useSheypoor) {
-        try {
-          const spPage = isBackfill ? (Number(row.pagination_page) || 1) : 1;
-          const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage });
-          const spTokens = isBackfill ? [...spRes.tokens].reverse() : spRes.tokens;
-          candidateTokens.push(...spTokens);
-          if (!nextCursorDate && spRes.nextCursorDate) {
-            nextCursorDate = `sp_${spRes.nextCursorDate}`;
-          }
-        } catch (se: any) {
-          console.error(`Sheypoor search error for rule ${row.id}:`, se?.message || se);
-        }
+      // Fallback 2: if single photo still fails media check -> plain HTML sendMessage
+      const photoErr = String(res.json?.description || '');
+      if (!res.ok && isTelegramMediaError(photoErr) && budget.used < budget.max) {
+        res = await callTelegramMethod(env, 'sendMessage', {
+          chat_id: payload.body.chat_id,
+          text: firstMedia.caption || '',
+          parse_mode: 'HTML',
+          disable_web_page_preview: false,
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+        }, budget);
       }
-
-      let queuedThisRule = 0;
-      const batchStatements: D1PreparedStatement[] = [];
-
-      for (const token of candidateTokens) {
-        if (detailFetchesUsed >= MAX_DETAIL_FETCHES_PER_TICK) break;
-
-        const existing = await env.DB.prepare(
-          `SELECT status FROM sent_ads WHERE rule_id = ? AND post_token = ?`
-        ).bind(row.id, token).first();
-
-        if (existing) {
-          continue;
-        }
-
-        detailFetchesUsed++;
-        const isSheypoor = token.startsWith('sp_');
-        const ad = isSheypoor
-          ? await fetchSheypoorPostDetail(token, row.deal_type, env)
-          : await fetchDivarPostDetail(token, row.deal_type, env);
-        if (!ad) continue;
-
-        const evalRes = evaluateAdMatch(ad, row as FilterRule);
-        if (evalRes.eligible) {
-          const cardPayload = buildTelegramCardPayload(ad, evalRes, row as FilterRule, row.chat_id, isBackfill);
-          batchStatements.push(
-            env.DB.prepare(
-              `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, card_payload_json, discovered_at)
-               VALUES (?, ?, ?, ?, 'QUEUED', ?, ?)`
-            ).bind(row.id, row.channel_id, token, evalRes.score, JSON.stringify(cardPayload), nowSec)
-          );
-          queuedThisRule++;
-          if (isBackfill && (row.backfill_queued_count + queuedThisRule) >= row.backfill_target_count) {
-            break;
-          }
-        } else {
-          batchStatements.push(
-            env.DB.prepare(
-              `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, discovered_at)
-               VALUES (?, ?, ?, ?, 'SKIPPED', ?)`
-            ).bind(row.id, row.channel_id, token, evalRes.score, nowSec)
-          );
-        }
-      }
-
-      // Transition BACKFILL -> LIVE once backfill target is reached or no further pages exist
-      const newQueuedTotal = Number(row.backfill_queued_count) + queuedThisRule;
-      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || !nextCursorDate);
-
-      batchStatements.push(
-        env.DB.prepare(
-          `UPDATE sync_state
-           SET phase = ?,
-               backfill_queued_count = ?,
-               pagination_cursor_date = ?,
-               pagination_page = ?,
-               search_uid = ?,
-               last_watermark_timestamp = ?,
-               last_polled_at = ?,
-               consecutive_errors = 0
-           WHERE rule_id = ?`
-        ).bind(
-          shouldTransitionToLive ? 'LIVE' : (row.phase || 'BACKFILL'),
-          newQueuedTotal,
-          shouldTransitionToLive ? null : (nextCursorDate ?? null),
-          shouldTransitionToLive ? 1 : ((Number(row.pagination_page) || 1) + 1),
-          searchUid ?? null,
-          nowSec,
-          nowSec,
-          row.id
-        )
-      );
-
-      if (batchStatements.length > 0) {
-        await env.DB.batch(batchStatements);
-      }
-    } catch (err: any) {
-      await env.DB.prepare(
-        `UPDATE sync_state SET consecutive_errors = consecutive_errors + 1, last_error_msg = ?, last_polled_at = ? WHERE rule_id = ?`
-      ).bind(String(err?.message || err || 'Unknown error'), nowSec, row.id).run();
+    }
+  } else if (!res.ok && payload.method === 'sendPhoto') {
+    const errDesc = String(res.json?.description || `HTTP ${res.status}`);
+    if (isTelegramMediaError(errDesc) && budget.used < budget.max) {
+      res = await callTelegramMethod(env, 'sendMessage', {
+        chat_id: payload.body.chat_id,
+        text: payload.body.caption || '',
+        parse_mode: 'HTML',
+        disable_web_page_preview: false,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+      }, budget);
     }
   }
 
-  // 3. Drain Outbound Queue (Rate-limited to max 15 messages/min per channel, 3.5s spacing)
-  const maxMsgs = parseInt(env.MAX_CHANNEL_MSGS_PER_MIN || '15', 10);
+  if (res.status === 429 || res.json?.error_code === 429) {
+    return { ok: false, rateLimited: true, retryAfter: res.json?.parameters?.retry_after || 5 };
+  }
+
+  if (!res.ok) {
+    return { ok: false, error: String(res.json?.description || `HTTP ${res.status}`) };
+  }
+
+  const msgId = Array.isArray(res.json.result)
+    ? (res.json.result[0]?.message_id || 0)
+    : (res.json.result?.message_id || 0);
+
+  if (followupButtons && payload.method === 'sendMediaGroup' && replyMarkup?.inline_keyboard?.length > 0 && budget.used < budget.max) {
+    try {
+      await callTelegramMethod(env, 'sendMessage', {
+        chat_id: payload.body.chat_id,
+        text: '📎 دسترسی سریع و راه‌های ارتباطی:',
+        reply_markup: replyMarkup
+      }, budget);
+    } catch (_) {}
+  }
+
+  return { ok: true, msgId };
+}
+
+async function drainOutboundQueue(env: Env, nowSec: number, budget: SubrequestBudget): Promise<void> {
+  const maxPerChannelPerMin = parseInt(env.MAX_CHANNEL_MSGS_PER_MIN || '15', 10);
+  const fetchLimit = Math.min(maxPerChannelPerMin, 10);
+
   const queuedRows = await env.DB.prepare(
-    `SELECT sa.rule_id, sa.channel_id, sa.post_token, sa.card_payload_json, r.owner_user_id
+    `SELECT sa.rule_id, sa.channel_id, sa.post_token, sa.card_payload_json,
+            r.owner_user_id, COALESCE(r.album_followup_buttons, 0) as album_followup_buttons,
+            c.last_sent_at, c.sent_count_current_minute, c.minute_window_start
      FROM sent_ads sa
      JOIN filter_rules r ON sa.rule_id = r.id
+     JOIN channels c ON sa.channel_id = c.id
      WHERE sa.status = 'QUEUED'
      ORDER BY sa.discovered_at ASC
      LIMIT ?`
-  ).bind(maxMsgs).all();
+  ).bind(fetchLimit).all();
 
   const items = (queuedRows.results || []) as any[];
+  const channelCounters = new Map<string, { windowStart: number; count: number; lastSentAt: number }>();
+
   for (let i = 0; i < items.length; i++) {
+    if (budget.used >= budget.max) break;
     const item = items[i];
+
+    // Enforce per-channel rate tracking using channels table state
+    let chState = channelCounters.get(item.channel_id);
+    if (!chState) {
+      const winStart = Number(item.minute_window_start) || 0;
+      const inCurrentWindow = nowSec - winStart < 60;
+      chState = {
+        windowStart: inCurrentWindow ? winStart : nowSec,
+        count: inCurrentWindow ? (Number(item.sent_count_current_minute) || 0) : 0,
+        lastSentAt: Number(item.last_sent_at) || 0
+      };
+      channelCounters.set(item.channel_id, chState);
+    }
+
+    if (chState.count >= maxPerChannelPerMin) {
+      continue; // Channel hit 1-minute quota; keep remaining ads in QUEUED for next cron tick
+    }
+
     try {
       const payload = JSON.parse(item.card_payload_json);
-      const bodyToSend = { ...payload.body };
-      const replyMarkup = bodyToSend.reply_markup;
-      if (payload.method === 'sendMediaGroup') {
-        delete bodyToSend.reply_markup;
+      const outcome = await dispatchTelegramWithFallback(
+        env,
+        payload,
+        Number(item.album_followup_buttons) === 1,
+        budget
+      );
+
+      if (outcome.rateLimited) {
+        console.warn(`Telegram rate limited (${outcome.retryAfter}s). Remaining ads kept in QUEUED status.`);
+        break;
       }
-      const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${payload.method}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyToSend)
-      });
-      const tgJson: any = await tgRes.json();
 
-      if (tgRes.ok && tgJson.ok) {
-        const msgId = Array.isArray(tgJson.result)
-          ? (tgJson.result[0]?.message_id || 0)
-          : (tgJson.result?.message_id || 0);
-
-        if (payload.method === 'sendMediaGroup' && replyMarkup?.inline_keyboard?.length > 0) {
-          try {
-            await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: bodyToSend.chat_id,
-                text: '📎 دسترسی سریع و راه‌های ارتباطی:',
-                reply_markup: replyMarkup
-              })
-            });
-          } catch (_) {}
-        }
+      const sentNow = Math.floor(Date.now() / 1000);
+      if (outcome.ok) {
+        chState.count += 1;
+        chState.lastSentAt = sentNow;
 
         const batchStmts: D1PreparedStatement[] = [
           env.DB.prepare(
-            `UPDATE sent_ads SET status = 'SENT', telegram_message_id = ?, sent_at = ? WHERE rule_id = ? AND post_token = ?`
-          ).bind(msgId, Math.floor(Date.now() / 1000), item.rule_id, item.post_token),
+            `UPDATE sent_ads SET status = 'SENT', telegram_message_id = ?, sent_at = ?, last_error_msg = NULL WHERE rule_id = ? AND post_token = ?`
+          ).bind(outcome.msgId || 0, sentNow, item.rule_id, item.post_token),
           env.DB.prepare(
             `UPDATE sync_state SET backfill_dispatched_count = backfill_dispatched_count + 1 WHERE rule_id = ?`
-          ).bind(item.rule_id)
+          ).bind(item.rule_id),
+          env.DB.prepare(
+            `UPDATE channels SET last_sent_at = ?, sent_count_current_minute = ?, minute_window_start = ? WHERE id = ?`
+          ).bind(chState.lastSentAt, chState.count, chState.windowStart, item.channel_id)
         ];
 
         if (item.owner_user_id) {
@@ -231,19 +244,13 @@ export async function runScheduledTick(env: Env): Promise<void> {
             ).bind(item.owner_user_id)
           );
         }
-
         await env.DB.batch(batchStmts);
-      } else if (tgRes.status === 429 || tgJson?.error_code === 429) {
-        const retrySec = tgJson?.parameters?.retry_after || 5;
-        console.warn(`Telegram rate limited: retry after ${retrySec}s. Remaining ads kept in QUEUED status.`);
-        break;
       } else {
-        const errDesc = tgJson?.description || `HTTP ${tgRes.status}`;
-        console.error(`Telegram post failed for token ${item.post_token}:`, errDesc);
+        const errDesc = outcome.error || 'Unknown Telegram error';
         await env.DB.batch([
           env.DB.prepare(
-            `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
-          ).bind(item.rule_id, item.post_token),
+            `UPDATE sent_ads SET status = 'FAILED', last_error_msg = ? WHERE rule_id = ? AND post_token = ?`
+          ).bind(errDesc.slice(0, 250), item.rule_id, item.post_token),
           env.DB.prepare(
             `INSERT INTO system_logs (level, component, rule_id, message, meta_json) VALUES ('ERROR', 'TELEGRAM', ?, ?, ?)`
           ).bind(
@@ -254,13 +261,269 @@ export async function runScheduledTick(env: Env): Promise<void> {
         ]);
       }
     } catch (err: any) {
+      const msg = String(err?.message || err || 'Dispatch exception').slice(0, 250);
       await env.DB.prepare(
-        `UPDATE sent_ads SET status = 'FAILED' WHERE rule_id = ? AND post_token = ?`
-      ).bind(item.rule_id, item.post_token).run();
+        `UPDATE sent_ads SET status = 'FAILED', last_error_msg = ? WHERE rule_id = ? AND post_token = ?`
+      ).bind(msg, item.rule_id, item.post_token).run();
     }
 
-    if (i < items.length - 1) {
-      await new Promise((r) => setTimeout(r, 3500));
+    // Gentle pacing only if another item remains and next item targets the same channel
+    if (i < items.length - 1 && items[i + 1].channel_id === item.channel_id && budget.used < budget.max) {
+      await new Promise((r) => setTimeout(r, 1500));
     }
+  }
+}
+
+export async function runScheduledTick(env: Env): Promise<void> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const tehranDay = new Intl.DateTimeFormat('en-CA', { timeZone: env.DEFAULT_TIMEZONE || 'Asia/Tehran' }).format(new Date());
+  const budget: SubrequestBudget = { used: 0, max: MAX_SUBREQUESTS_PER_TICK };
+
+  // 1. Reset daily search quotas on Tehran midnight boundary & expire elapsed subscriptions
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE subscriptions SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at < ?`).bind(nowSec),
+    env.DB.prepare(
+      `UPDATE subscriptions SET searches_used_today = 0, last_quota_reset_day = ?
+       WHERE status = 'ACTIVE' AND last_quota_reset_day != ?`
+    ).bind(tehranDay, tehranDay)
+  ]);
+
+  // 2. Prioritize draining outbound QUEUED items so approved ads never starve behind scrapers
+  await drainOutboundQueue(env, nowSec, budget);
+
+  // 3. Select up to 2 active rules eligible for polling within remaining subrequest budget
+  if (budget.used >= budget.max - 2) return;
+
+  const activeRulesRes = await env.DB.prepare(
+    `SELECT r.*, c.chat_id, c.title as channel_title,
+            c.contact_mobile, c.contact_phone, c.office_address, c.brand_hashtags_json,
+            s.phase, s.backfill_target_count, s.backfill_queued_count,
+            s.pagination_cursor_date, s.pagination_page, COALESCE(s.sheypoor_page, 1) as sheypoor_page,
+            s.search_uid, s.last_watermark_timestamp, COALESCE(s.consecutive_errors, 0) as consecutive_errors,
+            sub.id as sub_id,
+            COALESCE(sub.searches_used_today, 0) as searches_used_today,
+            COALESCE(sub.total_ads_sent, 0) as total_ads_sent,
+            sub.max_total_searches,
+            COALESCE(p.daily_ad_quota, 1000) as daily_ad_quota
+     FROM filter_rules r
+     JOIN channels c ON r.channel_id = c.id
+     JOIN sync_state s ON r.id = s.rule_id
+     LEFT JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
+     LEFT JOIN plans p ON sub.plan_id = p.id
+     WHERE r.is_active = 1
+       AND c.is_enabled = 1
+       AND s.phase IN ('BACKFILL', 'LIVE')
+       AND COALESCE(s.is_auto_paused, 0) = 0
+       AND COALESCE(s.next_retry_at, 0) <= ?
+     ORDER BY s.last_polled_at ASC
+     LIMIT 2`
+  ).bind(nowSec).all();
+
+  const rules = (activeRulesRes.results || []) as any[];
+
+  for (const row of rules) {
+    if (budget.used >= budget.max) break;
+    if (row.searches_used_today >= row.daily_ad_quota) continue;
+    if (row.max_total_searches && row.total_ads_sent >= row.max_total_searches) continue;
+
+    const batchStatements: D1PreparedStatement[] = [];
+    const sourceErrors: string[] = [];
+
+    try {
+      const isBackfill = row.phase === 'BACKFILL';
+      const useDivar = row.source_divar !== 0;
+      const useSheypoor = row.source_sheypoor !== 0;
+      const branding = parseRuleBranding(row);
+
+      const candidateTokens: string[] = [];
+      let nextDivarCursor: string | null = null;
+      let nextDivarPage = 1;
+      let searchUid: string | null = row.search_uid ?? null;
+      let nextSheypoorPage = 1;
+      let sheypoorHasMore = false;
+      let divarSucceeded = !useDivar;
+      let sheypoorSucceeded = !useSheypoor;
+
+      // A. Fetch Divar candidates with isolated pagination
+      if (useDivar && budget.used < budget.max) {
+        try {
+          const curPage = Number(row.pagination_page) || 1;
+          const validCursor = row.pagination_cursor_date && !String(row.pagination_cursor_date).startsWith('sp_') && curPage <= 50;
+          const divarPagination = isBackfill && validCursor
+            ? { lastPostDate: row.pagination_cursor_date, page: curPage, searchUid: row.search_uid }
+            : undefined;
+
+          budget.used++;
+          const searchRes = await searchDivarPostList(row as FilterRule, env, divarPagination);
+          const divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
+          candidateTokens.push(...divarTokens);
+          nextDivarCursor = searchRes.nextCursorDate;
+          nextDivarPage = isBackfill ? curPage + 1 : 1;
+          searchUid = searchRes.searchUid;
+          divarSucceeded = true;
+        } catch (de: any) {
+          const errMsg = String(de?.message || de || 'Divar error');
+          sourceErrors.push(errMsg);
+          batchStatements.push(
+            env.DB.prepare(
+              `INSERT INTO system_logs (level, component, rule_id, message) VALUES ('WARN', 'DIVAR_SCRAPER', ?, ?)`
+            ).bind(row.id, errMsg.slice(0, 300))
+          );
+        }
+      }
+
+      // B. Fetch Sheypoor candidates with independent pagination
+      if (useSheypoor && budget.used < budget.max) {
+        try {
+          const spPage = isBackfill ? (Number(row.sheypoor_page) || 1) : 1;
+          budget.used++;
+          const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage });
+          const spTokens = isBackfill ? [...spRes.tokens].reverse() : spRes.tokens;
+          candidateTokens.push(...spTokens);
+          sheypoorHasMore = !!spRes.nextCursorDate;
+          nextSheypoorPage = isBackfill && sheypoorHasMore ? spPage + 1 : 1;
+          sheypoorSucceeded = true;
+        } catch (se: any) {
+          const errMsg = String(se?.message || se || 'Sheypoor error');
+          sourceErrors.push(errMsg);
+          batchStatements.push(
+            env.DB.prepare(
+              `INSERT INTO system_logs (level, component, rule_id, message) VALUES ('WARN', 'SHEYPOOR_SCRAPER', ?, ?)`
+            ).bind(row.id, errMsg.slice(0, 300))
+          );
+        }
+      }
+
+      if (!divarSucceeded && !sheypoorSucceeded) {
+        throw new Error(sourceErrors.join(' | ') || 'All enabled scrapers failed');
+      }
+
+      // Single batched D1 query for all candidate tokens (eliminates N+1 D1 round-trips)
+      const seenTokens = await fetchExistingTokensSet(env.DB, row.id, candidateTokens);
+
+      let queuedThisRule = 0;
+      for (const token of candidateTokens) {
+        if (budget.used >= budget.max) break;
+        if (seenTokens.has(token)) continue;
+        seenTokens.add(token);
+
+        budget.used++;
+        const isSheypoor = token.startsWith('sp_');
+        const ad = isSheypoor
+          ? await fetchSheypoorPostDetail(token, row.deal_type, env)
+          : await fetchDivarPostDetail(token, row.deal_type, env);
+        if (!ad) continue;
+
+        const evalRes = evaluateAdMatch(ad, row as FilterRule);
+        const fingerprint = computeAdFingerprint(ad);
+
+        if (evalRes.eligible) {
+          // Cross-source deduplication check (suppresses Divar <-> Sheypoor duplicates on same channel)
+          if (fingerprint) {
+            const dup = await env.DB.prepare(
+              `SELECT 1 FROM sent_ads WHERE channel_id = ? AND fingerprint = ? AND status IN ('QUEUED', 'SENT') AND discovered_at >= ? LIMIT 1`
+            ).bind(row.channel_id, fingerprint, nowSec - DEDUP_WINDOW_SECONDS).first();
+            if (dup) {
+              batchStatements.push(
+                env.DB.prepare(
+                  `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, fingerprint, last_error_msg, discovered_at)
+                   VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?, ?)`
+                ).bind(row.id, row.channel_id, token, evalRes.score, fingerprint, 'Duplicate cross-source property', nowSec)
+              );
+              continue;
+            }
+          }
+
+          const cardPayload = buildTelegramCardPayload(ad, evalRes, row as FilterRule, row.chat_id, isBackfill, branding);
+          batchStatements.push(
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, card_payload_json, fingerprint, discovered_at)
+               VALUES (?, ?, ?, ?, 'QUEUED', ?, ?, ?)`
+            ).bind(row.id, row.channel_id, token, evalRes.score, JSON.stringify(cardPayload), fingerprint, nowSec)
+          );
+          queuedThisRule++;
+          if (isBackfill && (row.backfill_queued_count + queuedThisRule) >= row.backfill_target_count) {
+            break;
+          }
+        } else {
+          batchStatements.push(
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, fingerprint, discovered_at)
+               VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?)`
+            ).bind(row.id, row.channel_id, token, evalRes.score, fingerprint, nowSec)
+          );
+        }
+      }
+
+      const newQueuedTotal = Number(row.backfill_queued_count) + queuedThisRule;
+      const noMorePages = !nextDivarCursor && !sheypoorHasMore;
+      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || noMorePages);
+      const nextPhase = isBackfill ? (shouldTransitionToLive ? 'LIVE' : 'BACKFILL') : 'LIVE';
+
+      batchStatements.push(
+        env.DB.prepare(
+          `UPDATE sync_state
+           SET phase = ?,
+               backfill_queued_count = ?,
+               pagination_cursor_date = ?,
+               pagination_page = ?,
+               sheypoor_page = ?,
+               search_uid = ?,
+               last_watermark_timestamp = ?,
+               last_polled_at = ?,
+               consecutive_errors = 0,
+               last_error_msg = ?,
+               next_retry_at = 0,
+               is_auto_paused = 0
+           WHERE rule_id = ?`
+        ).bind(
+          nextPhase,
+          newQueuedTotal,
+          nextPhase === 'LIVE' ? null : nextDivarCursor,
+          nextPhase === 'LIVE' ? 1 : nextDivarPage,
+          nextPhase === 'LIVE' ? 1 : nextSheypoorPage,
+          nextPhase === 'LIVE' ? null : searchUid,
+          nowSec,
+          nowSec,
+          sourceErrors.length > 0 ? sourceErrors[0].slice(0, 250) : null,
+          row.id
+        )
+      );
+
+      if (batchStatements.length > 0) {
+        await env.DB.batch(batchStatements);
+      }
+    } catch (err: any) {
+      const nextErrCount = (Number(row.consecutive_errors) || 0) + 1;
+      const errMsg = String(err?.message || err || 'Unknown error').slice(0, 300);
+      const backoffSec = Math.min(3600, 60 * Math.pow(2, Math.min(nextErrCount - 1, 6)));
+      const autoPause = nextErrCount >= MAX_AUTO_PAUSE_ERRORS ? 1 : 0;
+
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE sync_state
+           SET consecutive_errors = ?,
+               last_error_msg = ?,
+               last_polled_at = ?,
+               next_retry_at = ?,
+               is_auto_paused = ?,
+               phase = CASE WHEN ? = 1 THEN 'ERROR' ELSE phase END
+           WHERE rule_id = ?`
+        ).bind(nextErrCount, errMsg, nowSec, nowSec + backoffSec, autoPause, autoPause, row.id),
+        env.DB.prepare(
+          `INSERT INTO system_logs (level, component, rule_id, message) VALUES ('ERROR', 'SCHEDULER', ?, ?)`
+        ).bind(row.id, autoPause ? `Rule auto-paused after ${nextErrCount} errors: ${errMsg}` : errMsg)
+      ]);
+    }
+  }
+
+  // 4. Lightweight periodic retention prune (once/hour window)
+  if (nowSec % 3600 < 90) {
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`DELETE FROM sent_ads WHERE status = 'SKIPPED' AND discovered_at < ?`).bind(nowSec - SKIPPED_RETENTION_SECONDS),
+        env.DB.prepare(`DELETE FROM system_logs WHERE id NOT IN (SELECT id FROM system_logs ORDER BY id DESC LIMIT 500)`)
+      ]);
+    } catch (_) {}
   }
 }

@@ -1,4 +1,68 @@
-import { FilterRule, MatchResult, ParsedDivarAd } from '../types';
+import { ChannelBranding, FilterRule, MatchResult, ParsedDivarAd } from '../types';
+
+export const DEFAULT_ALIABAD_BRANDING: ChannelBranding = {
+  chat_id: '@aliabadmelk',
+  contact_mobile: '09922434338',
+  contact_phone: '01734241371',
+  office_address: 'علی‌آباد کتول، خیابان پاسداران (کمربندی قدیم)، نبش پاسداران ۸، املاک امیران',
+  brand_hashtags: ['#املاک_امیران', '#علی_آباد_ملک']
+};
+
+export function resolveChannelBranding(chatId: string, branding?: ChannelBranding | null): ChannelBranding {
+  if (branding && (branding.contact_mobile || branding.contact_phone || branding.office_address || (branding.brand_hashtags && branding.brand_hashtags.length > 0))) {
+    return {
+      chat_id: branding.chat_id || chatId,
+      contact_mobile: branding.contact_mobile || '',
+      contact_phone: branding.contact_phone || '',
+      office_address: branding.office_address || '',
+      brand_hashtags: branding.brand_hashtags || []
+    };
+  }
+  if (!chatId || chatId === '@aliabadmelk' || chatId === '@preview_channel') {
+    return { ...DEFAULT_ALIABAD_BRANDING, chat_id: chatId || '@aliabadmelk' };
+  }
+  return { chat_id: chatId, brand_hashtags: [] };
+}
+
+function buildContactFooterLines(resolved: ChannelBranding): string[] {
+  const lines: string[] = [];
+  const hasContact = resolved.contact_mobile || resolved.contact_phone || resolved.office_address;
+  if (hasContact) {
+    lines.push(`━━━━━━━━━━━━━━━━━━`, `📞 <b>ارتباط با ما:</b>`);
+    if (resolved.contact_mobile) lines.push(`📱 همراه: ${escapeHtml(resolved.contact_mobile)}`);
+    if (resolved.contact_phone) lines.push(`☎️ تلفن دفتر: ${escapeHtml(resolved.contact_phone)}`);
+    if (resolved.office_address) lines.push(`📍 آدرس دفتر: ${escapeHtml(resolved.office_address)}`);
+  } else {
+    lines.push(`━━━━━━━━━━━━━━━━━━`);
+  }
+  lines.push(`🔗 عضویت در کانال: ${escapeHtml(resolved.chat_id)}`);
+  return lines;
+}
+
+function trimCaptionSafely(lines: string[], extraSuffix = '', maxLen = 1020): string {
+  const base = lines.join('\n');
+  const full = extraSuffix ? `${base}\n${extraSuffix}` : base;
+  if (full.length <= maxLen) return full;
+
+  // Step 1: Drop optional <i>description</i> block and its divider
+  const withoutDesc: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('📄') && lines[i + 1]?.startsWith('<i>')) {
+      if (withoutDesc[withoutDesc.length - 1]?.startsWith('━━━')) withoutDesc.pop();
+      i++;
+      continue;
+    }
+    withoutDesc.push(lines[i]);
+  }
+  const reduced = extraSuffix ? `${withoutDesc.join('\n')}\n${extraSuffix}` : withoutDesc.join('\n');
+  if (reduced.length <= maxLen) return reduced;
+
+  // Step 2: Trim plain-text lines cleanly (never breaking HTML open/close tags)
+  const trimmedBody = withoutDesc.join('\n').slice(0, Math.max(0, maxLen - extraSuffix.length - 4));
+  const lastNewline = trimmedBody.lastIndexOf('\n');
+  const safeBody = lastNewline > 200 ? trimmedBody.slice(0, lastNewline) : trimmedBody;
+  return extraSuffix ? `${safeBody}\n${extraSuffix}` : safeBody;
+}
 
 export function escapeHtml(str: string | undefined | null): string {
   if (!str) return '';
@@ -76,10 +140,12 @@ export function buildTelegramCardPayload(
   evalResult: MatchResult,
   rule: FilterRule,
   chatId: string,
-  isBackfill: boolean
+  _isBackfill: boolean,
+  branding?: ChannelBranding | null
 ): { method: 'sendMediaGroup' | 'sendPhoto' | 'sendMessage'; body: Record<string, any> } {
   const score = evalResult.score;
   const isRent = ad.dealType === 'RENT';
+  const resolvedBranding = resolveChannelBranding(chatId, branding);
 
   const district = ad.districtPersian && ad.districtPersian !== 'نامشخص' ? ad.districtPersian.trim() : '';
   const locationText = district ? `${ad.cityPersian || 'علی‌آباد کتول'}، ${district}` : (ad.cityPersian || 'علی‌آباد کتول');
@@ -192,7 +258,10 @@ export function buildTelegramCardPayload(
     tags.push('#اجاره', '#رهن_و_اجاره');
     if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
     if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
-    tags.push('#املاک_امیران', '#علی_آباد_ملک');
+    for (const bt of resolvedBranding.brand_hashtags || []) {
+      const cleanTag = bt.startsWith('#') ? bt : `#${bt}`;
+      if (!tags.includes(cleanTag)) tags.push(cleanTag);
+    }
     tags.push(ad.source === 'sheypoor' || ad.token.startsWith('sp_') ? '#شیپور' : '#دیوار');
 
     captionLines = [
@@ -232,12 +301,7 @@ export function buildTelegramCardPayload(
     captionLines.push(
       `━━━━━━━━━━━━━━━━━━`,
       `🏷 ${tags.join(' ')}`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `📞 <b>ارتباط با ما:</b>`,
-      `📱 همراه: 09922434338`,
-      `☎️ تلفن دفتر: 01734241371`,
-      `📍 آدرس دفتر: علی‌آباد کتول، خیابان پاسداران (کمربندی قدیم)، نبش پاسداران ۸، املاک امیران`,
-      `🔗 عضویت در کانال: @aliabadmelk`
+      ...buildContactFooterLines(resolvedBranding)
     );
   } else {
     // ----------------- SALE TEMPLATE -----------------
@@ -361,7 +425,10 @@ export function buildTelegramCardPayload(
     tags.push('#فروش');
     if (propType) tags.push(`#${sanitizeHashtag(propType)}`);
     if (bedText) tags.push(`#${sanitizeHashtag(bedText)}`);
-    tags.push('#املاک_امیران', '#علی_آباد_ملک');
+    for (const bt of resolvedBranding.brand_hashtags || []) {
+      const cleanTag = bt.startsWith('#') ? bt : `#${bt}`;
+      if (!tags.includes(cleanTag)) tags.push(cleanTag);
+    }
     tags.push(ad.source === 'sheypoor' || ad.token.startsWith('sp_') ? '#شیپور' : '#دیوار');
 
     captionLines = [
@@ -400,23 +467,8 @@ export function buildTelegramCardPayload(
     captionLines.push(
       `━━━━━━━━━━━━━━━━━━`,
       `🏷 ${tags.join(' ')}`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `📞 <b>ارتباط با ما:</b>`,
-      `📱 همراه: 09922434338`,
-      `☎️ تلفن دفتر: 01734241371`,
-      `📍 آدرس دفتر: علی‌آباد کتول، خیابان پاسداران (کمربندی قدیم)، نبش پاسداران ۸، املاک امیران`,
-      `🔗 عضویت در کانال: @aliabadmelk`
+      ...buildContactFooterLines(resolvedBranding)
     );
-  }
-
-  // Ensure total length strictly adheres to Telegram photo caption limit (1024 characters)
-  let caption = captionLines.join('\n');
-  if (caption.length > 1020) {
-    // If oversized, drop or truncate the supplementary description line
-    caption = captionLines
-      .filter((line) => !line.startsWith('<i>'))
-      .join('\n')
-      .slice(0, 1018);
   }
 
   const showBtnDivar = rule.show_btn_divar !== 0;
@@ -430,6 +482,8 @@ export function buildTelegramCardPayload(
   const sourceUrl = isSheypoor
     ? (ad.url || `https://www.sheypoor.com/v/${cleanSpId}`)
     : (ad.url || `https://divar.ir/v/${ad.token}`);
+
+  const caption = trimCaptionSafely(captionLines, '', 1020);
   const inlineKeyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [];
 
   // Row 1: Source (Divar / Sheypoor) and/or Map
@@ -464,16 +518,22 @@ export function buildTelegramCardPayload(
     : (ad.primaryPhotoUrl ? [ad.primaryPhotoUrl] : []);
 
   if (albumUrls.length > 1) {
+    const albumLinks: string[] = [];
+    if (showBtnDivar) albumLinks.push(`🔗 <a href="${sourceUrl}">مشاهده در ${sourceLabelFa}</a>`);
+    if (showBtnMap && ad.latitude && ad.longitude) {
+      albumLinks.push(`🗺 <a href="https://maps.google.com/?q=${ad.latitude},${ad.longitude}">موقعیت روی نقشه</a>`);
+    }
+    if (showBtnScore) albumLinks.push(`📊 تطابق: <b>${score}٪</b>`);
+    const albumSuffix = albumLinks.join('  |  ');
+    const albumCaption = trimCaptionSafely(captionLines, albumSuffix, 1020);
+
     const media = albumUrls.slice(0, 10).map((url, idx) => {
       const item: Record<string, any> = {
         type: 'photo',
         media: url
       };
       if (idx === 0) {
-        // First media holds the rich caption with direct HTML link
-        item.caption = showBtnDivar
-          ? caption + `\n🔗 <a href="${sourceUrl}">مشاهده مستقیم در ${sourceLabelFa}</a>`
-          : caption;
+        item.caption = albumCaption;
         item.parse_mode = 'HTML';
       }
       return item;

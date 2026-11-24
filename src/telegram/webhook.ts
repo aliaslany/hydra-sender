@@ -1,4 +1,5 @@
 import { Env } from '../types';
+import { resolveChannelBranding } from './cardBuilder';
 
 async function tgApi(env: Env, method: string, body: Record<string, any>): Promise<any> {
   const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
@@ -7,6 +8,38 @@ async function tgApi(env: Env, method: string, body: Record<string, any>): Promi
     body: JSON.stringify(body)
   });
   return res.json();
+}
+
+function buildWizardStage2Keyboard(draft: any) {
+  const s2 = draft.stage2 || {};
+  const skel: string[] = Array.isArray(s2.skeleton) ? s2.skeleton : [];
+  const dir: string[] = Array.isArray(s2.direction) ? s2.direction : [];
+  const cityId = (Array.isArray(draft.city_ids) && draft.city_ids[0]) || '823';
+  const useDivar = draft.source_divar !== 0;
+  const useSheypoor = draft.source_sheypoor !== 0;
+
+  return {
+    inline_keyboard: [
+      [
+        { text: `${s2.parking ? '✅' : '⬜'} پارکینگ`, callback_data: 'wiz_s2_toggle:parking' },
+        { text: `${s2.elevator ? '✅' : '⬜'} آسانسور`, callback_data: 'wiz_s2_toggle:elevator' },
+        { text: `${s2.storage ? '✅' : '⬜'} انباری`, callback_data: 'wiz_s2_toggle:storage' }
+      ],
+      [
+        { text: `${skel.includes('CONCRETE') ? '✅' : '⬜'} اسکلت بتنی`, callback_data: 'wiz_s2_skel:CONCRETE' },
+        { text: `${dir.includes('NORTH') ? '✅' : '⬜'} شمالی`, callback_data: 'wiz_s2_dir:NORTH' },
+        { text: `${dir.includes('SOUTH') ? '✅' : '⬜'} جنوبی`, callback_data: 'wiz_s2_dir:SOUTH' }
+      ],
+      [
+        { text: `📍 شهر: ${cityId === '1' ? 'تهران' : (cityId === '24' ? 'گرگان' : 'علی‌آباد کتول')}`, callback_data: 'wiz_cycle_city' },
+        { text: `${useDivar ? '✅' : '⬜'} دیوار`, callback_data: 'wiz_src_toggle:divar' },
+        { text: `${useSheypoor ? '✅' : '⬜'} شیپور`, callback_data: 'wiz_src_toggle:sheypoor' }
+      ],
+      [
+        { text: '➡️ تایید مشخصات و انتخاب تعداد آگهی اولیه (Backfill)', callback_data: 'wiz_backfill_step' }
+      ]
+    ]
+  };
 }
 
 function isSuperAdmin(telegramId: number, env: Env): boolean {
@@ -83,9 +116,33 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
     }
 
     if (data.startsWith('contact_info:') || data === 'contact_info') {
+      const adToken = data.includes(':') ? data.split(':')[1] : '';
+      const msgChatUsername = cb.message?.chat?.username ? `@${cb.message.chat.username}` : (cb.message?.chat?.id ? String(cb.message.chat.id) : '');
+      let chRow: any = null;
+      if (msgChatUsername) {
+        chRow = await env.DB.prepare(`SELECT * FROM channels WHERE chat_id = ?`).bind(msgChatUsername).first();
+      }
+      if (!chRow && adToken) {
+        chRow = await env.DB.prepare(
+          `SELECT c.* FROM sent_ads sa JOIN channels c ON sa.channel_id = c.id WHERE sa.post_token = ? LIMIT 1`
+        ).bind(adToken).first();
+      }
+      const branding = resolveChannelBranding(chRow?.chat_id || msgChatUsername || '@aliabadmelk', chRow ? {
+        chat_id: chRow.chat_id,
+        contact_mobile: chRow.contact_mobile,
+        contact_phone: chRow.contact_phone,
+        office_address: chRow.office_address
+      } : null);
+
+      const lines = ['📞 اطلاعات تماس و مشاوره:'];
+      if (branding.contact_mobile) lines.push(`📱 همراه: ${branding.contact_mobile}`);
+      if (branding.contact_phone) lines.push(`☎️ دفتر: ${branding.contact_phone}`);
+      if (branding.office_address) lines.push(`📍 ${branding.office_address}`);
+      lines.push(`🔗 کانال تلگرام: ${branding.chat_id}`);
+
       await tgApi(env, 'answerCallbackQuery', {
         callback_query_id: cb.id,
-        text: `📞 اطلاعات تماس و مشاوره:\n📱 همراه: 09922434338\n☎️ دفتر: 01734241371\n📍 علی‌آباد کتول، خیابان پاسداران، نبش پاسداران ۸، املاک امیران\n🔗 کانال تلگرام: @aliabadmelk`,
+        text: lines.join('\n').slice(0, 195),
         show_alert: true
       });
       return new Response('OK');
@@ -96,7 +153,13 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
 
     if (data.startsWith('wiz_start:')) {
       const channelId = data.split(':')[1];
-      const nextDraft = { channel_id: channelId, stage2: { parking: true, elevator: true, storage: true } };
+      const nextDraft = {
+        channel_id: channelId,
+        city_ids: ['823'],
+        source_divar: 1,
+        source_sheypoor: 1,
+        stage2: { parking: true, elevator: true, storage: true }
+      };
       await env.DB.prepare(`UPDATE users SET wizard_state = 'WIZ_STAGE1_CATEGORY', wizard_draft_json = ? WHERE telegram_id = ?`)
         .bind(JSON.stringify(nextDraft), fromId).run();
 
@@ -148,28 +211,12 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
       await env.DB.prepare(`UPDATE users SET wizard_state = 'WIZ_STAGE2_SPECS', wizard_draft_json = ? WHERE telegram_id = ?`)
         .bind(JSON.stringify(draft), fromId).run();
 
-      const s2 = draft.stage2 || {};
       await tgApi(env, 'editMessageText', {
         chat_id: chatId,
         message_id: msgId,
-        text: `<b>مرحله ۳ از ۵: مشخصات مرحله دوم (Stage 2)</b>\nامکانات، نوع اسکلت، جهت ساختمان و کابینت را انتخاب کرده و سپس دکمه ادامه را بزنید:`,
+        text: `<b>مرحله ۳ از ۵: مشخصات، شهر و منابع دریافت آگهی</b>\nامکانات، شهر و سامانه‌های (دیوار/شیپور) مورد نظر را انتخاب کرده و سپس دکمه ادامه را بزنید:`,
         parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: `${s2.parking ? '✅' : '⬜'} پارکینگ`, callback_data: 'wiz_s2_toggle:parking' },
-              { text: `${s2.elevator ? '✅' : '⬜'} آسانسور`, callback_data: 'wiz_s2_toggle:elevator' },
-              { text: `${s2.storage ? '✅' : '⬜'} انباری`, callback_data: 'wiz_s2_toggle:storage' }
-            ],
-            [
-              { text: '🧱 اسکلت بتنی', callback_data: 'wiz_s2_skel:CONCRETE' },
-              { text: '🧭 شمالی/جنوبی', callback_data: 'wiz_s2_dir:NORTH_SOUTH' }
-            ],
-            [
-              { text: '➡️ تایید مشخصات و انتخاب تعداد آگهی اولیه (Backfill)', callback_data: 'wiz_backfill_step' }
-            ]
-          ]
-        }
+        reply_markup: buildWizardStage2Keyboard(draft)
       });
       return new Response('OK');
     }
@@ -180,7 +227,75 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
       draft.stage2[key] = !draft.stage2[key];
       await env.DB.prepare(`UPDATE users SET wizard_draft_json = ? WHERE telegram_id = ?`)
         .bind(JSON.stringify(draft), fromId).run();
-      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `گزینه ${key} بروزرسانی شد.` });
+      await tgApi(env, 'editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: buildWizardStage2Keyboard(draft)
+      });
+      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `بروزرسانی شد.` });
+      return new Response('OK');
+    }
+
+    if (data.startsWith('wiz_s2_skel:')) {
+      const val = data.split(':')[1];
+      draft.stage2 = draft.stage2 || {};
+      const curr: string[] = Array.isArray(draft.stage2.skeleton) ? draft.stage2.skeleton : [];
+      draft.stage2.skeleton = curr.includes(val) ? curr.filter((x) => x !== val) : [...curr, val];
+      await env.DB.prepare(`UPDATE users SET wizard_draft_json = ? WHERE telegram_id = ?`)
+        .bind(JSON.stringify(draft), fromId).run();
+      await tgApi(env, 'editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: buildWizardStage2Keyboard(draft)
+      });
+      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `اسکلت بروزرسانی شد.` });
+      return new Response('OK');
+    }
+
+    if (data.startsWith('wiz_s2_dir:')) {
+      const val = data.split(':')[1];
+      draft.stage2 = draft.stage2 || {};
+      const curr: string[] = Array.isArray(draft.stage2.direction) ? draft.stage2.direction : [];
+      draft.stage2.direction = curr.includes(val) ? curr.filter((x) => x !== val) : [...curr, val];
+      await env.DB.prepare(`UPDATE users SET wizard_draft_json = ? WHERE telegram_id = ?`)
+        .bind(JSON.stringify(draft), fromId).run();
+      await tgApi(env, 'editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: buildWizardStage2Keyboard(draft)
+      });
+      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `جهت ساختمان بروزرسانی شد.` });
+      return new Response('OK');
+    }
+
+    if (data === 'wiz_cycle_city') {
+      const cities = ['823', '24', '1'];
+      const curr = (Array.isArray(draft.city_ids) && draft.city_ids[0]) || '823';
+      const next = cities[(cities.indexOf(curr) + 1) % cities.length];
+      draft.city_ids = [next];
+      await env.DB.prepare(`UPDATE users SET wizard_draft_json = ? WHERE telegram_id = ?`)
+        .bind(JSON.stringify(draft), fromId).run();
+      await tgApi(env, 'editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: buildWizardStage2Keyboard(draft)
+      });
+      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `شهر تغییر یافت.` });
+      return new Response('OK');
+    }
+
+    if (data.startsWith('wiz_src_toggle:')) {
+      const src = data.split(':')[1];
+      if (src === 'divar') draft.source_divar = draft.source_divar === 0 ? 1 : 0;
+      if (src === 'sheypoor') draft.source_sheypoor = draft.source_sheypoor === 0 ? 1 : 0;
+      await env.DB.prepare(`UPDATE users SET wizard_draft_json = ? WHERE telegram_id = ?`)
+        .bind(JSON.stringify(draft), fromId).run();
+      await tgApi(env, 'editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: buildWizardStage2Keyboard(draft)
+      });
+      await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `منابع دریافت بروزرسانی شد.` });
       return new Response('OK');
     }
 
@@ -209,13 +324,14 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
 
       await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO filter_rules (id, channel_id, owner_user_id, name, is_active, deal_type, property_type, divar_category_slug, max_budget, min_area, max_area, tolerance_pct, min_match_score, stage2_filters_json)
-           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 65, ?)`
+          `INSERT INTO filter_rules (id, channel_id, owner_user_id, name, is_active, city_ids_json, deal_type, property_type, divar_category_slug, max_budget, min_area, max_area, tolerance_pct, min_match_score, stage2_filters_json, source_divar, source_sheypoor)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 65, ?, ?, ?)`
         ).bind(
           ruleId,
           channelId,
           fromId,
           `فیلتر هوشمند (${draft.divar_category_slug || 'apartment-sell'})`,
+          JSON.stringify(Array.isArray(draft.city_ids) && draft.city_ids.length > 0 ? draft.city_ids : ['823']),
           draft.deal_type || 'BUY',
           draft.property_type || 'APARTMENT',
           draft.divar_category_slug || 'apartment-sell',
@@ -223,7 +339,9 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
           draft.min_area || 80,
           draft.max_area || 150,
           draft.tolerance_pct || 0.15,
-          JSON.stringify(draft.stage2 || {})
+          JSON.stringify(draft.stage2 || {}),
+          draft.source_divar !== undefined ? Number(draft.source_divar) : 1,
+          draft.source_sheypoor !== undefined ? Number(draft.source_sheypoor) : 1
         ),
         env.DB.prepare(
           `INSERT INTO sync_state (rule_id, phase, backfill_target_count, backfill_queued_count, backfill_dispatched_count)

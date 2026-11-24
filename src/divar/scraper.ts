@@ -88,7 +88,7 @@ export async function searchDivarPostList(
     }
   };
 
-  if (pagination && pagination.lastPostDate) {
+  if (pagination && pagination.lastPostDate && !pagination.lastPostDate.startsWith('sp_') && pagination.page <= 50) {
     payload.pagination_data = {
       '@type': 'type.googleapis.com/post_list.PaginationData',
       last_post_date: pagination.lastPostDate,
@@ -106,7 +106,11 @@ export async function searchDivarPostList(
   });
 
   if (!res.ok) {
-    throw new Error(`Divar search failed with HTTP ${res.status}`);
+    let errDetail = '';
+    try {
+      errDetail = (await res.text()).slice(0, 300);
+    } catch {}
+    throw new Error(`Divar search failed with HTTP ${res.status}${errDetail ? `: ${errDetail}` : ''}`);
   }
 
   const data: any = await res.json();

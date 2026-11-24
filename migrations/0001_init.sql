@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS channels (
     last_sent_at INTEGER NOT NULL DEFAULT 0,
     sent_count_current_minute INTEGER NOT NULL DEFAULT 0,
     minute_window_start INTEGER NOT NULL DEFAULT 0,
+    contact_mobile TEXT,
+    contact_phone TEXT,
+    office_address TEXT,
+    brand_hashtags_json TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -101,6 +105,7 @@ CREATE TABLE IF NOT EXISTS filter_rules (
     show_btn_map INTEGER NOT NULL DEFAULT 1,
     show_btn_score INTEGER NOT NULL DEFAULT 1,
     show_btn_contact INTEGER NOT NULL DEFAULT 1,
+    album_followup_buttons INTEGER NOT NULL DEFAULT 0,
     source_divar INTEGER NOT NULL DEFAULT 1,
     source_sheypoor INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -116,11 +121,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
     backfill_dispatched_count INTEGER NOT NULL DEFAULT 0,
     pagination_cursor_date TEXT,
     pagination_page INTEGER NOT NULL DEFAULT 1,
+    sheypoor_page INTEGER NOT NULL DEFAULT 1,
     search_uid TEXT,
     last_watermark_timestamp INTEGER NOT NULL DEFAULT 0,
     last_polled_at INTEGER NOT NULL DEFAULT 0,
     consecutive_errors INTEGER NOT NULL DEFAULT 0,
-    last_error_msg TEXT
+    last_error_msg TEXT,
+    next_retry_at INTEGER NOT NULL DEFAULT 0,
+    is_auto_paused INTEGER NOT NULL DEFAULT 0
 );
 
 -- 7. Deduplication & Outbound Message Queue
@@ -132,11 +140,14 @@ CREATE TABLE IF NOT EXISTS sent_ads (
     status TEXT NOT NULL DEFAULT 'QUEUED' CHECK(status IN ('QUEUED', 'SENT', 'FAILED', 'SKIPPED')),
     telegram_message_id INTEGER,
     card_payload_json TEXT,
+    fingerprint TEXT,
+    last_error_msg TEXT,
     discovered_at INTEGER NOT NULL DEFAULT (unixepoch()),
     sent_at INTEGER,
     PRIMARY KEY (rule_id, post_token)
 );
 CREATE INDEX IF NOT EXISTS idx_sent_ads_queue ON sent_ads(status, channel_id, discovered_at);
+CREATE INDEX IF NOT EXISTS idx_sent_ads_fingerprint ON sent_ads(channel_id, fingerprint, discovered_at);
 
 -- 8. Operational Telemetry & Audit Logs
 CREATE TABLE IF NOT EXISTS system_logs (
