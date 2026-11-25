@@ -1,4 +1,4 @@
-name: Deploy Hydra Real Estate Worker & GitHub Pages
+name: Test & Deploy Hydra Real Estate Worker
 
 on:
   push:
@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   deploy-worker:
@@ -33,19 +31,3 @@ jobs:
           fi
           npx wrangler d1 execute hydra-db --remote --yes --file=migrations/0001_init.sql
           npx wrangler deploy
-
-  deploy-pages:
-    runs-on: ubuntu-latest
-    name: Publish Website to GitHub Pages
-    steps:
-      - uses: actions/checkout@v4
-      - name: Stage static website files
-        run: |
-          mkdir -p _site
-          cp index.html seo.html 404.html robots.txt sitemap.xml CNAME .nojekyll _site/
-          cp -r assets _site/
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: "_site"
-      - uses: actions/deploy-pages@v4
