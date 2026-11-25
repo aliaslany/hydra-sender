@@ -406,67 +406,78 @@ export async function handleAdminApi(request: Request, env: Env): Promise<Respon
         ? JSON.stringify(normalizeStage2Input(body.stage2_filters))
         : (existing.stage2_filters_json ?? '{}');
 
-      await env.DB.prepare(
-        `UPDATE filter_rules SET
-          channel_id = ?,
-          name = ?,
-          divar_category_slug = ?,
-          deal_type = ?,
-          property_type = ?,
-          city_ids_json = ?,
-          districts_json = ?,
-          min_budget = ?,
-          max_budget = ?,
-          min_rent = ?,
-          max_rent = ?,
-          min_area = ?,
-          max_area = ?,
-          tolerance_pct = ?,
-          min_match_score = ?,
-          stage2_filters_json = ?,
-          geo_polygon_json = ?,
-          exclude_agency = ?,
-          max_post_age_hours = ?,
-          negative_keywords_json = ?,
-          show_btn_divar = ?,
-          show_btn_map = ?,
-          show_btn_score = ?,
-          show_btn_contact = ?,
-          album_followup_buttons = ?,
-          source_divar = ?,
-          source_sheypoor = ?,
-          updated_at = unixepoch()
-        WHERE id = ?`
-      ).bind(
-        updatedChannelId,
-        body.name || existing.name,
-        body.divar_category_slug || existing.divar_category_slug,
-        body.deal_type || existing.deal_type,
-        body.property_type || existing.property_type,
-        body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]'),
-        body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]'),
-        body.min_budget !== undefined ? (Number(body.min_budget) || 0) : (Number(existing.min_budget) || 0),
-        body.max_budget !== undefined ? (Number(body.max_budget) || 0) : (Number(existing.max_budget) || 0),
-        body.min_rent !== undefined ? (Number(body.min_rent) || 0) : (Number(existing.min_rent) || 0),
-        body.max_rent !== undefined ? (Number(body.max_rent) || 0) : (Number(existing.max_rent) || 0),
-        body.min_area !== undefined ? (Number(body.min_area) || 0) : (Number(existing.min_area) || 0),
-        body.max_area !== undefined ? (Number(body.max_area) || 0) : (Number(existing.max_area) || 0),
-        body.tolerance_pct !== undefined ? (Number(body.tolerance_pct) || 0.15) : (Number(existing.tolerance_pct) || 0.15),
-        body.min_match_score !== undefined ? (Number(body.min_match_score) || 65) : (Number(existing.min_match_score) || 65),
-        stage2Json,
-        body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : (existing.geo_polygon_json ?? null),
-        body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
-        body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
-        body.negative_keywords ? JSON.stringify(body.negative_keywords) : (existing.negative_keywords_json ?? null),
-        body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : (Number(existing.show_btn_divar) ?? 1),
-        body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
-        body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
-        body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
-        body.album_followup_buttons !== undefined ? Number(body.album_followup_buttons) : (Number(existing.album_followup_buttons) || 0),
-        body.source_divar !== undefined ? Number(body.source_divar) : (existing.source_divar !== undefined ? Number(existing.source_divar) : 1),
-        body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : (existing.source_sheypoor !== undefined ? Number(existing.source_sheypoor) : 1),
-        ruleId
-      ).run();
+      const updateStmts: D1PreparedStatement[] = [
+        env.DB.prepare(
+          `UPDATE filter_rules SET
+            channel_id = ?,
+            name = ?,
+            divar_category_slug = ?,
+            deal_type = ?,
+            property_type = ?,
+            city_ids_json = ?,
+            districts_json = ?,
+            min_budget = ?,
+            max_budget = ?,
+            min_rent = ?,
+            max_rent = ?,
+            min_area = ?,
+            max_area = ?,
+            tolerance_pct = ?,
+            min_match_score = ?,
+            stage2_filters_json = ?,
+            geo_polygon_json = ?,
+            exclude_agency = ?,
+            max_post_age_hours = ?,
+            negative_keywords_json = ?,
+            show_btn_divar = ?,
+            show_btn_map = ?,
+            show_btn_score = ?,
+            show_btn_contact = ?,
+            album_followup_buttons = ?,
+            source_divar = ?,
+            source_sheypoor = ?,
+            updated_at = unixepoch()
+          WHERE id = ?`
+        ).bind(
+          updatedChannelId,
+          body.name || existing.name,
+          body.divar_category_slug || existing.divar_category_slug,
+          body.deal_type || existing.deal_type,
+          body.property_type || existing.property_type,
+          body.city_ids ? JSON.stringify(body.city_ids) : (existing.city_ids_json || '["823"]'),
+          body.districts ? JSON.stringify(body.districts) : (existing.districts_json || '[]'),
+          body.min_budget !== undefined ? (Number(body.min_budget) || 0) : (Number(existing.min_budget) || 0),
+          body.max_budget !== undefined ? (Number(body.max_budget) || 0) : (Number(existing.max_budget) || 0),
+          body.min_rent !== undefined ? (Number(body.min_rent) || 0) : (Number(existing.min_rent) || 0),
+          body.max_rent !== undefined ? (Number(body.max_rent) || 0) : (Number(existing.max_rent) || 0),
+          body.min_area !== undefined ? (Number(body.min_area) || 0) : (Number(existing.min_area) || 0),
+          body.max_area !== undefined ? (Number(body.max_area) || 0) : (Number(existing.max_area) || 0),
+          body.tolerance_pct !== undefined ? (Number(body.tolerance_pct) || 0.15) : (Number(existing.tolerance_pct) || 0.15),
+          body.min_match_score !== undefined ? (Number(body.min_match_score) || 65) : (Number(existing.min_match_score) || 65),
+          stage2Json,
+          body.geo_polygon_json !== undefined ? (body.geo_polygon_json || null) : (existing.geo_polygon_json ?? null),
+          body.exclude_agency !== undefined ? Number(body.exclude_agency) : (Number(existing.exclude_agency) ?? 1),
+          body.max_post_age_hours !== undefined ? (Number(body.max_post_age_hours) || 24) : (Number(existing.max_post_age_hours) || 24),
+          body.negative_keywords ? JSON.stringify(body.negative_keywords) : (existing.negative_keywords_json ?? null),
+          body.show_btn_divar !== undefined ? Number(body.show_btn_divar) : (Number(existing.show_btn_divar) ?? 1),
+          body.show_btn_map !== undefined ? Number(body.show_btn_map) : (Number(existing.show_btn_map) ?? 1),
+          body.show_btn_score !== undefined ? Number(body.show_btn_score) : (Number(existing.show_btn_score) ?? 1),
+          body.show_btn_contact !== undefined ? Number(body.show_btn_contact) : (Number(existing.show_btn_contact) ?? 1),
+          body.album_followup_buttons !== undefined ? Number(body.album_followup_buttons) : (Number(existing.album_followup_buttons) || 0),
+          body.source_divar !== undefined ? Number(body.source_divar) : (existing.source_divar !== undefined ? Number(existing.source_divar) : 1),
+          body.source_sheypoor !== undefined ? Number(body.source_sheypoor) : (existing.source_sheypoor !== undefined ? Number(existing.source_sheypoor) : 1),
+          ruleId
+        )
+      ];
+
+      // Discard queued payloads pinned to the previous channel's chat_id/branding
+      if (updatedChannelId !== existing.channel_id) {
+        updateStmts.push(
+          env.DB.prepare(`DELETE FROM sent_ads WHERE rule_id = ? AND status = 'QUEUED'`).bind(ruleId)
+        );
+      }
+
+      await env.DB.batch(updateStmts);
 
       if (body.reset_backfill === true) {
         await resetRuleSyncState(env.DB, ruleId);

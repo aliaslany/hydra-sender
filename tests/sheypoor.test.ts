@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSheypoorPostDetail, resolveSheypoorCitySlug, searchSheypoorPostList } from '../src/sheypoor/scraper';
+import {
+  fetchSheypoorPostDetail,
+  resolveSheypoorCitySlug,
+  resolveSheypoorCitySlugs,
+  searchSheypoorPostList
+} from '../src/sheypoor/scraper';
 import { Env, FilterRule } from '../src/types';
 
 const mockEnv = {} as Env;
@@ -16,8 +21,54 @@ describe('Sheypoor Scraper', () => {
     vi.restoreAllMocks();
   });
 
-  it('resolves city 823 to official ali-abad-katul Sheypoor slug', () => {
+  it('resolves city 823, supports multi-city lists, and avoids false Aliabad fallback on unmapped IDs', () => {
     expect(resolveSheypoorCitySlug(mockRule)).toBe('ali-abad-katul');
+    expect(resolveSheypoorCitySlugs({ ...mockRule, city_ids_json: '["1", "24", "999"]' })).toEqual(['tehran', 'gorgan']);
+    expect(resolveSheypoorCitySlugs({ ...mockRule, city_ids_json: '["999"]' })).toEqual([]);
+    expect(resolveSheypoorCitySlugs({ ...mockRule, city_ids_json: '[]' })).toEqual(['ali-abad-katul']);
+  });
+
+  it('skips Sheypoor network request when rule specifies only unmapped city IDs', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const res = await searchSheypoorPostList({ ...mockRule, city_ids_json: '["999"]' }, mockEnv, { page: 1 });
+    expect(res.tokens).toEqual([]);
+    expect(res.nextCursorDate).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('infers RENT dealType from Sheypoor breadcrumbs even when caller asks for BUY', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          attributes: {
+            title: 'آپارتمان ۱۰۰ متری رهن',
+            description: 'طبقه ۲ با آسانسور',
+            breadcrumbs: [
+              { title: 'گلستان' },
+              { title: 'علی آباد کتول' },
+              { title: 'املاک' },
+              { title: 'رهن و اجاره آپارتمان' }
+            ],
+            location: 'گلستان، علی آباد کتول',
+            price: [
+              { label: 'رهن', amount: '400000000' },
+              { label: 'اجاره', amount: '5000000' }
+            ],
+            attributes: [{ key: 'متراژ', value: '100' }],
+            images: []
+          }
+        }
+      })
+    }));
+
+    const ad = await fetchSheypoorPostDetail('sp_555000', 'BUY', mockEnv);
+    expect(ad).not.toBeNull();
+    expect(ad!.dealType).toBe('RENT');
+    expect(ad!.propertyCategory).toBe('APARTMENT');
+    expect(ad!.credit).toBe(400_000_000);
+    expect(ad!.rent).toBe(5_000_000);
   });
 
   it('skips promoted paidEngagement, VIP, special, and banner blocks during search', async () => {

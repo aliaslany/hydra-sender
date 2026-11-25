@@ -80,6 +80,7 @@ export interface ParsedDivarAd {
   cityPersian: string;
   districtPersian: string;
   dealType: 'BUY' | 'RENT';
+  propertyCategory?: 'APARTMENT' | 'VILLA_LAND' | 'OLD_HOUSE' | 'COMMERCIAL';
   propertyTypeFa?: string;
   totalPrice: number;
   pricePerM2: number;

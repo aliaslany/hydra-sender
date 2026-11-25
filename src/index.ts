@@ -142,7 +142,6 @@ const INIT_STATEMENTS = [
     PRIMARY KEY (rule_id, post_token)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_sent_ads_queue ON sent_ads(status, channel_id, discovered_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_sent_ads_fingerprint ON sent_ads(channel_id, fingerprint, discovered_at)`,
   `CREATE TABLE IF NOT EXISTS system_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     level TEXT NOT NULL CHECK(level IN ('INFO', 'WARN', 'ERROR')),

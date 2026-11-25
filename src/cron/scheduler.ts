@@ -1,6 +1,6 @@
 import { ChannelBranding, Env, FilterRule } from '../types';
 import { fetchDivarPostDetail, searchDivarPostList } from '../divar/scraper';
-import { fetchSheypoorPostDetail, searchSheypoorPostList } from '../sheypoor/scraper';
+import { fetchSheypoorPostDetail, resolveSheypoorCitySlugs, searchSheypoorPostList } from '../sheypoor/scraper';
 import { computeAdFingerprint, evaluateAdMatch } from '../engine/scorer';
 import { buildTelegramCardPayload } from '../telegram/cardBuilder';
 
@@ -8,6 +8,46 @@ const MAX_SUBREQUESTS_PER_TICK = 42; // Safe headroom under Cloudflare Workers F
 const MAX_AUTO_PAUSE_ERRORS = 15;
 const DEDUP_WINDOW_SECONDS = 72 * 3600;
 const SKIPPED_RETENTION_SECONDS = 14 * 86400;
+
+export interface TaggedCandidateToken {
+  source: 'divar' | 'sheypoor';
+  token: string;
+}
+
+/**
+ * Interleaves Divar and Sheypoor candidate tokens fairly [d0, s0, d1, s1, ...]
+ * so neither source starves the other when subrequest budgets cut a tick short.
+ */
+export function interleaveSourceTokens(divarTokens: string[], spTokens: string[]): TaggedCandidateToken[] {
+  const result: TaggedCandidateToken[] = [];
+  const maxLen = Math.max(divarTokens.length, spTokens.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i < divarTokens.length) result.push({ source: 'divar', token: divarTokens[i] });
+    if (i < spTokens.length) result.push({ source: 'sheypoor', token: spTokens[i] });
+  }
+  return result;
+}
+
+/**
+ * Determines whether a BACKFILL rule may safely transition to LIVE.
+ * Requires no scraper errors and no mid-page budget truncation on either source.
+ */
+export function shouldTransitionBackfillToLive(params: {
+  isBackfill: boolean;
+  newQueuedTotal: number;
+  backfillTargetCount: number;
+  sourceErrorsCount: number;
+  divarRemainingUnprocessed: boolean;
+  sheypoorRemainingUnprocessed: boolean;
+  nextDivarCursor: string | null;
+  sheypoorHasMore: boolean;
+}): boolean {
+  if (!params.isBackfill) return false;
+  if (params.newQueuedTotal >= params.backfillTargetCount) return true;
+  if (params.sourceErrorsCount > 0) return false;
+  if (params.divarRemainingUnprocessed || params.sheypoorRemainingUnprocessed) return false;
+  return !params.nextDivarCursor && !params.sheypoorHasMore;
+}
 
 interface SubrequestBudget {
   used: number;
@@ -240,8 +280,13 @@ async function drainOutboundQueue(env: Env, nowSec: number, budget: SubrequestBu
           batchStmts.push(
             env.DB.prepare(
               `UPDATE subscriptions SET searches_used_today = searches_used_today + 1, total_ads_sent = total_ads_sent + 1
-               WHERE user_id = ? AND status = 'ACTIVE'`
-            ).bind(item.owner_user_id)
+               WHERE id = (
+                 SELECT id FROM subscriptions
+                 WHERE user_id = ? AND status = 'ACTIVE' AND expires_at >= ?
+                 ORDER BY expires_at DESC
+                 LIMIT 1
+               )`
+            ).bind(item.owner_user_id, sentNow)
           );
         }
         await env.DB.batch(batchStmts);
@@ -304,20 +349,29 @@ export async function runScheduledTick(env: Env): Promise<void> {
             COALESCE(sub.searches_used_today, 0) as searches_used_today,
             COALESCE(sub.total_ads_sent, 0) as total_ads_sent,
             sub.max_total_searches,
-            COALESCE(p.daily_ad_quota, 1000) as daily_ad_quota
+            COALESCE(p.daily_ad_quota, 50) as daily_ad_quota
      FROM filter_rules r
+     JOIN users u ON r.owner_user_id = u.telegram_id
      JOIN channels c ON r.channel_id = c.id
      JOIN sync_state s ON r.id = s.rule_id
-     LEFT JOIN subscriptions sub ON r.owner_user_id = sub.user_id AND sub.status = 'ACTIVE'
-     LEFT JOIN plans p ON sub.plan_id = p.id
+     JOIN subscriptions sub ON sub.id = (
+       SELECT s2.id FROM subscriptions s2
+       WHERE s2.user_id = r.owner_user_id
+         AND s2.status = 'ACTIVE'
+         AND s2.expires_at >= ?
+       ORDER BY s2.expires_at DESC
+       LIMIT 1
+     )
+     JOIN plans p ON sub.plan_id = p.id
      WHERE r.is_active = 1
+       AND COALESCE(u.is_banned, 0) = 0
        AND c.is_enabled = 1
        AND s.phase IN ('BACKFILL', 'LIVE')
        AND COALESCE(s.is_auto_paused, 0) = 0
        AND COALESCE(s.next_retry_at, 0) <= ?
      ORDER BY s.last_polled_at ASC
      LIMIT 2`
-  ).bind(nowSec).all();
+  ).bind(nowSec, nowSec).all();
 
   const rules = (activeRulesRes.results || []) as any[];
 
@@ -335,11 +389,14 @@ export async function runScheduledTick(env: Env): Promise<void> {
       const useSheypoor = row.source_sheypoor !== 0;
       const branding = parseRuleBranding(row);
 
-      const candidateTokens: string[] = [];
-      let nextDivarCursor: string | null = null;
-      let nextDivarPage = 1;
+      let divarTokens: string[] = [];
+      let spTokens: string[] = [];
+      const curDivarPage = Number(row.pagination_page) || 1;
+      const curSpPage = Number(row.sheypoor_page) || 1;
+      let nextDivarCursor: string | null = row.pagination_cursor_date ?? null;
+      let nextDivarPage = curDivarPage;
       let searchUid: string | null = row.search_uid ?? null;
-      let nextSheypoorPage = 1;
+      let nextSheypoorPage = curSpPage;
       let sheypoorHasMore = false;
       let divarSucceeded = !useDivar;
       let sheypoorSucceeded = !useSheypoor;
@@ -347,18 +404,16 @@ export async function runScheduledTick(env: Env): Promise<void> {
       // A. Fetch Divar candidates with isolated pagination
       if (useDivar && budget.used < budget.max) {
         try {
-          const curPage = Number(row.pagination_page) || 1;
-          const validCursor = row.pagination_cursor_date && !String(row.pagination_cursor_date).startsWith('sp_') && curPage <= 50;
+          const validCursor = row.pagination_cursor_date && !String(row.pagination_cursor_date).startsWith('sp_') && curDivarPage <= 50;
           const divarPagination = isBackfill && validCursor
-            ? { lastPostDate: row.pagination_cursor_date, page: curPage, searchUid: row.search_uid }
+            ? { lastPostDate: row.pagination_cursor_date, page: curDivarPage, searchUid: row.search_uid }
             : undefined;
 
           budget.used++;
           const searchRes = await searchDivarPostList(row as FilterRule, env, divarPagination);
-          const divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
-          candidateTokens.push(...divarTokens);
+          divarTokens = isBackfill ? [...searchRes.tokens].reverse() : searchRes.tokens;
           nextDivarCursor = searchRes.nextCursorDate;
-          nextDivarPage = isBackfill ? curPage + 1 : 1;
+          nextDivarPage = isBackfill ? curDivarPage + 1 : 1;
           searchUid = searchRes.searchUid;
           divarSucceeded = true;
         } catch (de: any) {
@@ -372,16 +427,30 @@ export async function runScheduledTick(env: Env): Promise<void> {
         }
       }
 
-      // B. Fetch Sheypoor candidates with independent pagination
+      // B. Fetch Sheypoor candidates across all configured supported cities with independent pagination
       if (useSheypoor && budget.used < budget.max) {
         try {
-          const spPage = isBackfill ? (Number(row.sheypoor_page) || 1) : 1;
-          budget.used++;
-          const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage });
-          const spTokens = isBackfill ? [...spRes.tokens].reverse() : spRes.tokens;
-          candidateTokens.push(...spTokens);
-          sheypoorHasMore = !!spRes.nextCursorDate;
-          nextSheypoorPage = isBackfill && sheypoorHasMore ? spPage + 1 : 1;
+          const spPage = isBackfill ? curSpPage : 1;
+          const citySlugs = resolveSheypoorCitySlugs(row as FilterRule);
+          const mergedSpTokens: string[] = [];
+          let cityLoopIncomplete = false;
+
+          for (const citySlug of citySlugs) {
+            if (budget.used >= budget.max) {
+              cityLoopIncomplete = true;
+              break;
+            }
+            budget.used++;
+            const spRes = await searchSheypoorPostList(row as FilterRule, env, { page: spPage, citySlug });
+            for (const tok of spRes.tokens) {
+              if (!mergedSpTokens.includes(tok)) mergedSpTokens.push(tok);
+            }
+            if (spRes.nextCursorDate) sheypoorHasMore = true;
+          }
+
+          if (cityLoopIncomplete) sheypoorHasMore = true;
+          spTokens = isBackfill ? [...mergedSpTokens].reverse() : mergedSpTokens;
+          nextSheypoorPage = isBackfill && !cityLoopIncomplete && sheypoorHasMore ? spPage + 1 : (isBackfill ? curSpPage : 1);
           sheypoorSucceeded = true;
         } catch (se: any) {
           const errMsg = String(se?.message || se || 'Sheypoor error');
@@ -398,40 +467,66 @@ export async function runScheduledTick(env: Env): Promise<void> {
         throw new Error(sourceErrors.join(' | ') || 'All enabled scrapers failed');
       }
 
-      // Single batched D1 query for all candidate tokens (eliminates N+1 D1 round-trips)
-      const seenTokens = await fetchExistingTokensSet(env.DB, row.id, candidateTokens);
+      // Interleave Divar and Sheypoor tokens so neither starves under tight subrequest budgets
+      const candidateItems = interleaveSourceTokens(divarTokens, spTokens);
+      const seenTokens = await fetchExistingTokensSet(env.DB, row.id, candidateItems.map((x) => x.token));
+      const queuedFingerprintsThisTick = new Map<string, 'divar' | 'sheypoor'>();
 
       let queuedThisRule = 0;
-      for (const token of candidateTokens) {
-        if (budget.used >= budget.max) break;
-        if (seenTokens.has(token)) continue;
-        seenTokens.add(token);
+      let divarRemainingUnprocessed = false;
+      let sheypoorRemainingUnprocessed = false;
+
+      for (let idx = 0; idx < candidateItems.length; idx++) {
+        const item = candidateItems[idx];
+        if (seenTokens.has(item.token)) continue;
+        if (budget.used >= budget.max) {
+          for (let j = idx; j < candidateItems.length; j++) {
+            if (seenTokens.has(candidateItems[j].token)) continue;
+            if (candidateItems[j].source === 'divar') divarRemainingUnprocessed = true;
+            else sheypoorRemainingUnprocessed = true;
+          }
+          break;
+        }
+        seenTokens.add(item.token);
 
         budget.used++;
-        const isSheypoor = token.startsWith('sp_');
-        const ad = isSheypoor
-          ? await fetchSheypoorPostDetail(token, row.deal_type, env)
-          : await fetchDivarPostDetail(token, row.deal_type, env);
+        const ad = item.source === 'sheypoor'
+          ? await fetchSheypoorPostDetail(item.token, row.deal_type, env)
+          : await fetchDivarPostDetail(item.token, row.deal_type, env);
         if (!ad) continue;
 
         const evalRes = evaluateAdMatch(ad, row as FilterRule);
         const fingerprint = computeAdFingerprint(ad);
 
         if (evalRes.eligible) {
-          // Cross-source deduplication check (suppresses Divar <-> Sheypoor duplicates on same channel)
+          // Strict cross-source deduplication only (suppresses Divar <-> Sheypoor duplicates on same channel)
           if (fingerprint) {
-            const dup = await env.DB.prepare(
-              `SELECT 1 FROM sent_ads WHERE channel_id = ? AND fingerprint = ? AND status IN ('QUEUED', 'SENT') AND discovered_at >= ? LIMIT 1`
-            ).bind(row.channel_id, fingerprint, nowSec - DEDUP_WINDOW_SECONDS).first();
-            if (dup) {
+            const oppositeSource: 'divar' | 'sheypoor' = item.source === 'sheypoor' ? 'divar' : 'sheypoor';
+            const oppositeTokenSql = item.source === 'sheypoor'
+              ? `post_token NOT LIKE 'sp_%'`
+              : `post_token LIKE 'sp_%'`;
+            const inTickDup = queuedFingerprintsThisTick.get(fingerprint) === oppositeSource;
+            const dup = !inTickDup
+              ? await env.DB.prepare(
+                  `SELECT 1 FROM sent_ads
+                   WHERE channel_id = ?
+                     AND fingerprint = ?
+                     AND ${oppositeTokenSql}
+                     AND status IN ('QUEUED', 'SENT')
+                     AND discovered_at >= ?
+                   LIMIT 1`
+                ).bind(row.channel_id, fingerprint, nowSec - DEDUP_WINDOW_SECONDS).first()
+              : null;
+            if (inTickDup || dup) {
               batchStatements.push(
                 env.DB.prepare(
                   `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, fingerprint, last_error_msg, discovered_at)
                    VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?, ?)`
-                ).bind(row.id, row.channel_id, token, evalRes.score, fingerprint, 'Duplicate cross-source property', nowSec)
+                ).bind(row.id, row.channel_id, item.token, evalRes.score, fingerprint, 'Duplicate cross-source property', nowSec)
               );
               continue;
             }
+            queuedFingerprintsThisTick.set(fingerprint, item.source);
           }
 
           const cardPayload = buildTelegramCardPayload(ad, evalRes, row as FilterRule, row.chat_id, isBackfill, branding);
@@ -439,7 +534,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
             env.DB.prepare(
               `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, card_payload_json, fingerprint, discovered_at)
                VALUES (?, ?, ?, ?, 'QUEUED', ?, ?, ?)`
-            ).bind(row.id, row.channel_id, token, evalRes.score, JSON.stringify(cardPayload), fingerprint, nowSec)
+            ).bind(row.id, row.channel_id, item.token, evalRes.score, JSON.stringify(cardPayload), fingerprint, nowSec)
           );
           queuedThisRule++;
           if (isBackfill && (row.backfill_queued_count + queuedThisRule) >= row.backfill_target_count) {
@@ -450,14 +545,30 @@ export async function runScheduledTick(env: Env): Promise<void> {
             env.DB.prepare(
               `INSERT OR IGNORE INTO sent_ads (rule_id, channel_id, post_token, match_score, status, fingerprint, discovered_at)
                VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?)`
-            ).bind(row.id, row.channel_id, token, evalRes.score, fingerprint, nowSec)
+            ).bind(row.id, row.channel_id, item.token, evalRes.score, fingerprint, nowSec)
           );
         }
       }
 
+      if (isBackfill && divarRemainingUnprocessed) {
+        nextDivarCursor = row.pagination_cursor_date ?? null;
+        nextDivarPage = curDivarPage;
+      }
+      if (isBackfill && sheypoorRemainingUnprocessed) {
+        nextSheypoorPage = curSpPage;
+      }
+
       const newQueuedTotal = Number(row.backfill_queued_count) + queuedThisRule;
-      const noMorePages = !nextDivarCursor && !sheypoorHasMore;
-      const shouldTransitionToLive = isBackfill && (newQueuedTotal >= Number(row.backfill_target_count) || noMorePages);
+      const shouldTransitionToLive = shouldTransitionBackfillToLive({
+        isBackfill,
+        newQueuedTotal,
+        backfillTargetCount: Number(row.backfill_target_count),
+        sourceErrorsCount: sourceErrors.length,
+        divarRemainingUnprocessed,
+        sheypoorRemainingUnprocessed,
+        nextDivarCursor: useDivar ? nextDivarCursor : null,
+        sheypoorHasMore: useSheypoor ? sheypoorHasMore : false
+      });
       const nextPhase = isBackfill ? (shouldTransitionToLive ? 'LIVE' : 'BACKFILL') : 'LIVE';
 
       batchStatements.push(

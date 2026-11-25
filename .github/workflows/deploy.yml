@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: "20"
       - run: npm install
+      - run: npm run typecheck
+      - run: npm test
       - name: Apply Cloudflare D1 Migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

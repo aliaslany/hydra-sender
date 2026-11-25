@@ -119,12 +119,62 @@ describe('Scorer & Persian NLP Engine', () => {
     expect(res.reasons[0]).toContain('املاک');
   });
 
-  it('produces identical fingerprints for matching Divar and Sheypoor listings', () => {
-    const divarAd = makeAd({ source: 'divar', totalPrice: 4_810_000_000, area: 100, bedrooms: 2 });
-    const sheypoorAd = makeAd({ token: 'sp_999', source: 'sheypoor', cityPersian: 'علی آباد کتول', totalPrice: 4_790_000_000, area: 101, bedrooms: 2 });
+  it('produces identical fingerprints for tight matching Divar and Sheypoor listings and separates distinct units', () => {
+    const divarAd = makeAd({ source: 'divar', totalPrice: 4_800_000_000, area: 100, bedrooms: 2, buildYear: 1398, floorNumber: 1 });
+    const sheypoorAd = makeAd({
+      token: 'sp_999',
+      source: 'sheypoor',
+      cityPersian: 'علی آباد کتول',
+      totalPrice: 4_802_000_000,
+      area: 100,
+      bedrooms: 2,
+      buildYear: 1398,
+      floorNumber: 1
+    });
+    const otherAreaAd = makeAd({ token: 'otherArea', totalPrice: 4_800_000_000, area: 102, bedrooms: 2, buildYear: 1398, floorNumber: 1 });
+    const otherYearAd = makeAd({ token: 'otherYear', totalPrice: 4_800_000_000, area: 100, bedrooms: 2, buildYear: 1403, floorNumber: 1 });
+
     const fp1 = computeAdFingerprint(divarAd);
     const fp2 = computeAdFingerprint(sheypoorAd);
     expect(fp1).not.toBeNull();
     expect(fp1).toBe(fp2);
+    expect(computeAdFingerprint(otherAreaAd)).not.toBe(fp1);
+    expect(computeAdFingerprint(otherYearAd)).not.toBe(fp1);
+  });
+
+  it('rejects mismatched deal_type (RENT ad evaluated against BUY rule)', () => {
+    const buyRule = makeRule({ deal_type: 'BUY', max_budget: 6_000_000_000 });
+    const rentAd = makeAd({
+      token: 'sp_rent_1',
+      source: 'sheypoor',
+      dealType: 'RENT',
+      totalPrice: 0,
+      credit: 400_000_000,
+      rent: 5_000_000
+    });
+    const res = evaluateAdMatch(rentAd, buyRule);
+    expect(res.eligible).toBe(false);
+    expect(res.reasons[0]).toContain('نوع معامله');
+  });
+
+  it('rejects COMMERCIAL ads from residential rules while allowing apartments near shops', () => {
+    const resRule = makeRule({ property_type: 'ALL_RESIDENTIAL' });
+    const commercialAd = makeAd({
+      title: 'فروش مغازه تجاری بر اصلی',
+      description: 'دارای سند تک برگ تجاری',
+      propertyCategory: 'COMMERCIAL',
+      propertyTypeFa: 'مغازه'
+    });
+    expect(evaluateAdMatch(commercialAd, resRule).eligible).toBe(false);
+
+    const aptRule = makeRule({ property_type: 'APARTMENT' });
+    const parsedNearShops = parseExtendedAttributesNLP('واحد دلباز نزدیک مغازه و مراکز تجاری، کف سرامیک', 'آپارتمان ۱۰۰ متری', 'apartment-sell');
+    const aptNearShops = makeAd({
+      title: 'آپارتمان ۱۰۰ متری',
+      description: 'واحد دلباز نزدیک مغازه و مراکز تجاری، کف سرامیک',
+      ...parsedNearShops
+    });
+    expect(aptNearShops.propertyCategory).toBe('APARTMENT');
+    expect(evaluateAdMatch(aptNearShops, aptRule).eligible).toBe(true);
   });
 });

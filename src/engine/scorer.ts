@@ -124,20 +124,100 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   return extracted;
 }
 
+export type NormalizedPropertyCategory = 'APARTMENT' | 'VILLA_LAND' | 'OLD_HOUSE' | 'COMMERCIAL';
+
+const PROXIMITY_COMMERCIAL_RE = /(?:نزدیک(?:\s+به)?|دسترسی(?:\s+به|\s+عالی\s+به)?|روبروی|رو\s+به\s+روی|مجاور|کنار|جنب|پشت)\s+(?:مراکز\s+)?(?:مغازه|تجاری|اداری|بازار)/g;
+
+/**
+ * Classifies a listing into a normalized property category using structured category metadata
+ * first, then title, and finally proximity-filtered description fallback.
+ */
+export function inferPropertyCategory(
+  title: string,
+  description: string,
+  categorySlug?: string
+): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } {
+  const catNorm = normalizePersianText(categorySlug || '').toLowerCase();
+  const titleNorm = normalizePersianText(title).toLowerCase();
+  const descClean = normalizePersianText(description).toLowerCase().replace(PROXIMITY_COMMERCIAL_RE, ' ');
+
+  const isResidentialCat = /(residential|مسکونی|آپارتمان|ویلا|خانه)/.test(catNorm) &&
+    !/(commercial|office|shop|store|تجاری|اداری|مغازه)/.test(catNorm);
+
+  const classifyCommercialText = (text: string): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } | null => {
+    if (/(commercial|shop|office|store|industrial|suite|تجاری|اداری|مغازه|صنعتی|کارگاه|سوله|غرفه|پاساژ|دفتر\s*کار|مطب)/.test(text)) {
+      return {
+        propertyCategory: 'COMMERCIAL',
+        propertyTypeFa: /(مغازه|shop|غرفه)/.test(text) ? 'مغازه' : 'تجاری خدماتی'
+      };
+    }
+    return null;
+  };
+
+  const classifyResidentialText = (text: string): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } | null => {
+    if (/(apartment|presell|آپارتمان|پنت\s*هاوس|سوئیت|مسکن\s*مهر)/.test(text)) {
+      return { propertyCategory: 'APARTMENT', propertyTypeFa: 'آپارتمان مسکونی' };
+    }
+    if (/(villa|house-villa|ویلایی|باغ\s*ویلا|خانه\s*ویلایی|خانه\s*و?\s*ویلا|ویلا\s*باغ|دوبلکس|تریبلکس|ویلا)/.test(text)) {
+      return { propertyCategory: 'VILLA_LAND', propertyTypeFa: 'ویلایی' };
+    }
+    if (/(plot|old|land|کلنگی|زمین|باغ|کشاورزی|شالیزار|مزرعه|مستغلات|چهاردیواری)/.test(text)) {
+      return { propertyCategory: 'OLD_HOUSE', propertyTypeFa: 'زمین / کلنگی' };
+    }
+    return null;
+  };
+
+  // 1. Structured category / breadcrumb takes top precedence
+  if (catNorm) {
+    const commCat = classifyCommercialText(catNorm);
+    if (commCat) return commCat;
+    const resCat = classifyResidentialText(catNorm);
+    if (resCat) return resCat;
+  }
+
+  // 2. Listing title is next most reliable
+  const commTitle = !isResidentialCat ? classifyCommercialText(titleNorm) : null;
+  if (commTitle) return commTitle;
+  const resTitle = classifyResidentialText(titleNorm);
+  if (resTitle) return resTitle;
+
+  // 3. Description fallback (stripping proximity phrases like "نزدیک مغازه")
+  const commDesc = !isResidentialCat ? classifyCommercialText(descClean) : null;
+  if (commDesc) return commDesc;
+  const resDesc = classifyResidentialText(descClean);
+  if (resDesc) return resDesc;
+
+  return { propertyCategory: 'APARTMENT', propertyTypeFa: 'آپارتمان مسکونی' };
+}
+
+export function doesPropertyCategoryMatch(
+  adCategory: NormalizedPropertyCategory,
+  rulePropertyType: FilterRule['property_type']
+): boolean {
+  switch (rulePropertyType) {
+    case 'ALL_RESIDENTIAL':
+      return adCategory !== 'COMMERCIAL';
+    case 'COMMERCIAL':
+      return adCategory === 'COMMERCIAL';
+    case 'APARTMENT':
+      return adCategory === 'APARTMENT';
+    case 'VILLA_LAND':
+      return adCategory === 'VILLA_LAND' || adCategory === 'OLD_HOUSE';
+    case 'OLD_HOUSE':
+      return adCategory === 'OLD_HOUSE';
+    default:
+      return true;
+  }
+}
+
 export function parseExtendedAttributesNLP(description: string, title: string, categorySlug?: string): Partial<ParsedDivarAd> {
   const norm = normalizePersianText(`${title} ${description}`);
   const attrs: Partial<ParsedDivarAd> = {};
 
-  // 1. Property Type
-  if (/(مغازه|تجاری|خدماتی|دفتر\s*کار)/.test(norm) || (categorySlug && categorySlug.includes('commercial'))) {
-    attrs.propertyTypeFa = /مغازه/.test(norm) ? 'مغازه' : 'تجاری خدماتی';
-  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس|ویلا\s*باغ)/.test(norm) || (categorySlug && (categorySlug.includes('villa') || categorySlug.includes('house-villa') || categorySlug.includes('ویلا')))) {
-    attrs.propertyTypeFa = 'ویلایی';
-  } else if (/(زمین|کلنگی|مستغلات|چهاردیواری|باغ|کشاورزی|مزرعه)/.test(norm) || (categorySlug && (categorySlug.includes('land') || categorySlug.includes('plot')))) {
-    attrs.propertyTypeFa = 'زمین / کلنگی';
-  } else {
-    attrs.propertyTypeFa = 'آپارتمان مسکونی';
-  }
+  // 1. Property Type & Normalized Category
+  const inferredCat = inferPropertyCategory(title, description, categorySlug);
+  attrs.propertyCategory = inferredCat.propertyCategory;
+  attrs.propertyTypeFa = inferredCat.propertyTypeFa;
 
   // 2. Units Per Floor
   const unitsKeyMatch = norm.match(/تعداد\s*واحد\s*(?:در\s*طبقه)?\s*[:：]?\s*(\d+)/);
@@ -189,13 +269,28 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   return attrs;
 }
 
+export function inferDealType(
+  categoryText: string,
+  totalPrice: number,
+  credit: number,
+  rent: number,
+  fallback: 'BUY' | 'RENT'
+): 'BUY' | 'RENT' {
+  const norm = normalizePersianText(categoryText).toLowerCase();
+  if (/(rent|اجاره|رهن|کرایه)/.test(norm)) return 'RENT';
+  if (/(sell|buy|presell|plot-old|خرید|فروش|پیش\s*فروش)/.test(norm)) return 'BUY';
+  if ((credit > 0 || rent > 0) && totalPrice === 0) return 'RENT';
+  if (totalPrice > 0 && credit === 0 && rent === 0) return 'BUY';
+  return fallback;
+}
+
 export function computeEquivalentRahn(creditToman: number, rentToman: number): number {
   return Math.round(creditToman + rentToman / 0.03);
 }
 
 /**
- * Computes a coarse fingerprint for cross-source deduplication (Divar <-> Sheypoor).
- * Returns null if price or area are missing so incomplete listings don't collide.
+ * Computes a tight structural fingerprint for cross-source deduplication (Divar <-> Sheypoor).
+ * Returns null if core dimensions (price, area, city) are missing so incomplete listings don't collide.
  */
 export function computeAdFingerprint(ad: ParsedDivarAd): string | null {
   const effectivePrice = ad.dealType === 'BUY'
@@ -203,16 +298,54 @@ export function computeAdFingerprint(ad: ParsedDivarAd): string | null {
     : computeEquivalentRahn(ad.credit || 0, ad.rent || 0);
   if (effectivePrice <= 0 || !ad.area || ad.area <= 0) return null;
 
-  const priceStep = ad.dealType === 'BUY' ? 50_000_000 : 5_000_000;
+  const cityKey = normalizeCityKey(ad.cityPersian || '');
+  if (!cityKey) return null;
+
+  const priceStep = ad.dealType === 'BUY' ? 10_000_000 : 1_000_000;
   const priceBucket = Math.round(effectivePrice / priceStep);
-  const areaBucket = Math.round(ad.area / 5);
-  const cityKey = normalizeCityKey(ad.cityPersian || 'unknown');
+  const areaExact = Math.round(ad.area);
   const beds = ad.bedrooms !== null && ad.bedrooms !== undefined ? String(ad.bedrooms) : 'x';
-  return `${ad.dealType}:${cityKey}:${priceBucket}:${areaBucket}:${beds}`;
+  const buildYear = ad.buildYear !== null && ad.buildYear !== undefined ? String(ad.buildYear) : 'x';
+  const floor = ad.floorNumber !== null && ad.floorNumber !== undefined ? String(ad.floorNumber) : 'x';
+  return `${ad.dealType}:${cityKey}:${priceBucket}:${areaExact}:${beds}:${buildYear}:${floor}`;
+}
+
+function rejectMatch(reason: string, budgetDeviationPct = 0): MatchResult {
+  return {
+    eligible: false,
+    score: 0,
+    budgetScore: 0,
+    areaScore: 0,
+    specsScore: 0,
+    budgetDeviationPct,
+    areaDeviationPct: 0,
+    reasons: [reason]
+  };
 }
 
 export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResult {
   const reasons: string[] = [];
+
+  // ==========================================
+  // Check -2: Deal Type Enforcement (BUY vs RENT)
+  // ==========================================
+  if (ad.dealType && rule.deal_type && ad.dealType !== rule.deal_type) {
+    return rejectMatch(
+      `نوع معامله آگهی (${ad.dealType === 'RENT' ? 'رهن و اجاره' : 'خرید و فروش'}) با فیلتر مطابقت ندارد`
+    );
+  }
+
+  // ==========================================
+  // Check -1: Property Category Enforcement (guards mixed-category feeds like Sheypoor c=43603)
+  // ==========================================
+  if (rule.property_type) {
+    const adCategory = ad.propertyCategory || inferPropertyCategory(ad.title || '', ad.description || '').propertyCategory;
+    if (!doesPropertyCategoryMatch(adCategory, rule.property_type)) {
+      return rejectMatch(
+        `نوع ملک آگهی (${ad.propertyTypeFa || adCategory}) با فیلتر (${rule.property_type}) مطابقت ندارد`
+      );
+    }
+  }
 
   // ==========================================
   // Check 0: Strict City Match Enforcement (guards Sheypoor VIP/neighboring city bleed)

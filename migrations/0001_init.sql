@@ -147,7 +147,6 @@ CREATE TABLE IF NOT EXISTS sent_ads (
     PRIMARY KEY (rule_id, post_token)
 );
 CREATE INDEX IF NOT EXISTS idx_sent_ads_queue ON sent_ads(status, channel_id, discovered_at);
-CREATE INDEX IF NOT EXISTS idx_sent_ads_fingerprint ON sent_ads(channel_id, fingerprint, discovered_at);
 
 -- 8. Operational Telemetry & Audit Logs
 CREATE TABLE IF NOT EXISTS system_logs (

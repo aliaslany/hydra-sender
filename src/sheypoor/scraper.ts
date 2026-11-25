@@ -1,5 +1,5 @@
 import { Env, FilterRule, ParsedDivarAd } from '../types';
-import { extractIntFromPersian, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
+import { extractIntFromPersian, inferDealType, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
 
 export const SHEYPOOR_HEADERS: Record<string, string> = {
   'Accept': 'application/vnd.api+json',
@@ -40,14 +40,34 @@ export const SHEYPOOR_CITY_MAP: Record<string, string> = {
   'رشت': 'rasht'
 };
 
-export function resolveSheypoorCitySlug(rule: FilterRule): string {
+/**
+ * Resolves configured filter city IDs/names to Sheypoor URL slugs.
+ * Unsupported city IDs are skipped (returns [] rather than falling back to Aliabad).
+ */
+export function resolveSheypoorCitySlugs(rule: FilterRule): string[] {
   try {
-    const cityIds: string[] = JSON.parse(rule.city_ids_json || '["823"]');
-    if (cityIds.length > 0 && SHEYPOOR_CITY_MAP[cityIds[0]]) {
-      return SHEYPOOR_CITY_MAP[cityIds[0]];
+    const raw = (rule.city_ids_json || '').trim();
+    if (!raw || raw === '[]') return ['ali-abad-katul'];
+    const cityIds: unknown = JSON.parse(raw);
+    if (!Array.isArray(cityIds) || cityIds.length === 0) return ['ali-abad-katul'];
+
+    const slugs: string[] = [];
+    for (const entry of cityIds) {
+      const key = String(entry).trim();
+      if (!key) continue;
+      const slug = SHEYPOOR_CITY_MAP[key] || SHEYPOOR_CITY_MAP[normalizePersianText(key)];
+      if (slug && !slugs.includes(slug)) {
+        slugs.push(slug);
+      }
     }
-  } catch (_) {}
-  return 'ali-abad-katul';
+    return slugs;
+  } catch {
+    return [];
+  }
+}
+
+export function resolveSheypoorCitySlug(rule: FilterRule): string | null {
+  return resolveSheypoorCitySlugs(rule)[0] ?? null;
 }
 
 function parseSheypoorRelativeTime(text?: string): number | null {
@@ -92,10 +112,13 @@ function parseSheypoorRelativeTime(text?: string): number | null {
 export async function searchSheypoorPostList(
   rule: FilterRule,
   env: Env,
-  pagination?: { page?: number }
+  pagination?: { page?: number; citySlug?: string }
 ): Promise<{ tokens: string[]; nextCursorDate: string | null; searchUid: string | null }> {
   const baseUrl = env.SHEYPOOR_PROXY_URL || 'https://www.sheypoor.com';
-  const citySlug = resolveSheypoorCitySlug(rule);
+  const citySlug = pagination?.citySlug || resolveSheypoorCitySlugs(rule)[0];
+  if (!citySlug) {
+    return { tokens: [], nextCursorDate: null, searchUid: null };
+  }
   const page = pagination?.page || 1;
   const T = rule.tolerance_pct || 0.15;
 
@@ -211,9 +234,6 @@ export async function fetchSheypoorPostDetail(
   }
   if (!cityPersian && breadcrumbs.length >= 3 && breadcrumbs[2]?.title) {
     cityPersian = String(breadcrumbs[2].title).trim();
-  }
-  if (!cityPersian) {
-    cityPersian = 'علی‌آباد کتول';
   }
 
   // Pricing
@@ -369,9 +389,14 @@ export async function fetchSheypoorPostDetail(
     if (parsed) postTimestamp = parsed;
   }
 
-  // Category Slug (prefer explicit slug, fallback to breadcrumb category text e.g. خرید و فروش ویلا)
-  const crumbCat = breadcrumbs.length >= 4 ? String(breadcrumbs[3]?.title || '') : '';
+  // Category Slug & Deal Type (extract deepest property-category breadcrumb instead of trusting caller dealType)
+  const matchingCrumb = [...breadcrumbs]
+    .reverse()
+    .find((b) => /(خرید|فروش|رهن|اجاره|آپارتمان|ویلا|خانه|زمین|باغ|کلنگی|تجاری|اداری|مغازه|سوله|مسکونی)/.test(normalizePersianText(String(b?.title || ''))));
+  const crumbCat = String(matchingCrumb?.title || (breadcrumbs.length >= 4 ? breadcrumbs[breadcrumbs.length - 1]?.title : '') || '');
   const categorySlug = `${attr.category_slug || attr.category || ''} ${crumbCat}`.trim() || 'real-estate';
+  const breadcrumbText = breadcrumbs.map((b) => String(b?.title || '')).join(' ');
+  const actualDealType = inferDealType(`${attr.category_slug || ''} ${attr.category || ''} ${breadcrumbText}`, totalPrice, credit, rent, dealType);
 
   // Merge with NLP fallback from description
   const nlpSpecs = parseDescriptionNLP(description);
@@ -399,7 +424,7 @@ export async function fetchSheypoorPostDetail(
     description,
     cityPersian,
     districtPersian,
-    dealType,
+    dealType: actualDealType,
     totalPrice,
     pricePerM2,
     credit,

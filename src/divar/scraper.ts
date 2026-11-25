@@ -1,5 +1,5 @@
 import { Env, FilterRule, ParsedDivarAd } from '../types';
-import { extractIntFromPersian, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
+import { extractIntFromPersian, inferDealType, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
 
 const DIVAR_HEADERS = {
   'Content-Type': 'application/json',
@@ -387,6 +387,7 @@ export async function fetchDivarPostDetail(
   // Merge structured KEY_VALUE specs with Persian NLP fallback from description
   const nlpSpecs = parseDescriptionNLP(description);
   const extendedAttrs = parseExtendedAttributesNLP(description, title, categorySlug);
+  const actualDealType = inferDealType(categorySlug, totalPrice, credit, rent, dealType);
 
   const mergedSpecs: ParsedDivarAd['specs'] = {
     parking: widgetSpecs.parking ?? nlpSpecs.parking,
@@ -406,7 +407,7 @@ export async function fetchDivarPostDetail(
     description,
     cityPersian,
     districtPersian,
-    dealType,
+    dealType: actualDealType,
     totalPrice,
     pricePerM2,
     credit,
