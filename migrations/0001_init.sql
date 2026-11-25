@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS channels (
     last_sent_at INTEGER NOT NULL DEFAULT 0,
     sent_count_current_minute INTEGER NOT NULL DEFAULT 0,
     minute_window_start INTEGER NOT NULL DEFAULT 0,
+    contact_mobile TEXT,
+    contact_phone TEXT,
+    office_address TEXT,
+    brand_hashtags_json TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -93,6 +97,17 @@ CREATE TABLE IF NOT EXISTS filter_rules (
     tolerance_pct REAL NOT NULL DEFAULT 0.15 CHECK(tolerance_pct BETWEEN 0.0 AND 0.25),
     min_match_score INTEGER NOT NULL DEFAULT 65 CHECK(min_match_score BETWEEN 0 AND 100),
     stage2_filters_json TEXT NOT NULL DEFAULT '{}',
+    geo_polygon_json TEXT,
+    exclude_agency INTEGER NOT NULL DEFAULT 1,
+    max_post_age_hours INTEGER NOT NULL DEFAULT 24,
+    negative_keywords_json TEXT,
+    show_btn_divar INTEGER NOT NULL DEFAULT 1,
+    show_btn_map INTEGER NOT NULL DEFAULT 1,
+    show_btn_score INTEGER NOT NULL DEFAULT 1,
+    show_btn_contact INTEGER NOT NULL DEFAULT 1,
+    album_followup_buttons INTEGER NOT NULL DEFAULT 0,
+    source_divar INTEGER NOT NULL DEFAULT 1,
+    source_sheypoor INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -106,11 +121,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
     backfill_dispatched_count INTEGER NOT NULL DEFAULT 0,
     pagination_cursor_date TEXT,
     pagination_page INTEGER NOT NULL DEFAULT 1,
+    sheypoor_page INTEGER NOT NULL DEFAULT 1,
     search_uid TEXT,
     last_watermark_timestamp INTEGER NOT NULL DEFAULT 0,
     last_polled_at INTEGER NOT NULL DEFAULT 0,
     consecutive_errors INTEGER NOT NULL DEFAULT 0,
-    last_error_msg TEXT
+    last_error_msg TEXT,
+    next_retry_at INTEGER NOT NULL DEFAULT 0,
+    is_auto_paused INTEGER NOT NULL DEFAULT 0
 );
 
 -- 7. Deduplication & Outbound Message Queue
@@ -122,6 +140,8 @@ CREATE TABLE IF NOT EXISTS sent_ads (
     status TEXT NOT NULL DEFAULT 'QUEUED' CHECK(status IN ('QUEUED', 'SENT', 'FAILED', 'SKIPPED')),
     telegram_message_id INTEGER,
     card_payload_json TEXT,
+    fingerprint TEXT,
+    last_error_msg TEXT,
     discovered_at INTEGER NOT NULL DEFAULT (unixepoch()),
     sent_at INTEGER,
     PRIMARY KEY (rule_id, post_token)

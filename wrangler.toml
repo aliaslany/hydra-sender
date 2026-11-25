@@ -2,6 +2,10 @@ name = "hydra-bot"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
 # 1-Minute Cron Trigger for Backfill & Live Streaming
 [triggers]
 crons = ["* * * * *"]

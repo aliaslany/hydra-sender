@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پنل مدیریت ربات املاک هیدرا | Hydra-Sender Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/admin/styles.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+  <header>
+    <h1>🏢 پنل هوشمند ربات املاک هیدرا</h1>
+    <div class="header-controls">
+      <span id="api-connection-badge" class="badge badge-backfill">در انتظار اتصال...</span>
+      <button class="btn btn-outline btn-sm" onclick="triggerCronTick()" title="اجرای فوری بررسی و ارسال آگهی‌ها">⚡ اجرای کرون‌تیک</button>
+      <button class="btn btn-outline btn-sm" onclick="openAuthDialog()">🔑 تنظیمات اتصال و توکن</button>
+      <button class="theme-toggle-btn" id="theme-toggle" onclick="toggleTheme()" title="تغییر حالت تاریک / روشن">🌓</button>
+    </div>
+  </header>
+
+  <!-- Auth Settings Dialog -->
+  <dialog id="auth-dialog">
+    <h3 style="margin-top:0;">تنظیمات اتصال به سرور Worker و دیتابیس</h3>
+    <div class="form-group" style="margin-bottom:0.75rem;">
+      <label>آدرس سرور Worker (API Base URL):</label>
+      <input type="url" id="cfg-worker-url" value="https://hydra-bot.a77aslani.workers.dev" />
+    </div>
+    <div class="form-group" style="margin-bottom:1rem;">
+      <label>توکن ادمین سیستم (ADMIN_MASTER_TOKEN):</label>
+      <input type="password" id="cfg-admin-token" placeholder="توکن امنیتی ادمین را وارد کنید..." />
+    </div>
+    <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+      <button class="btn" onclick="saveAuthConfig()">ذخیره و اتصال</button>
+      <button class="btn btn-outline" onclick="document.getElementById('auth-dialog').close()">انصراف</button>
+    </div>
+  </dialog>
+
+  <!-- Rule Add / Edit Dialog -->
+  <dialog id="rule-dialog">
+    <h3 id="rule-dialog-title" style="margin-top:0;">تعریف فیلتر دو مرحله‌ای هوشمند (دیوار و شیپور)</h3>
+    <form id="rule-form" onsubmit="submitRuleForm(event)">
+      <input type="hidden" id="r-edit-id" value="" />
+
+      <!-- Data Sources: Divar & Sheypoor -->
+      <div class="box-neutral">
+        <h4>📡 منابع استخراج آگهی (Data Sources):</h4>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.6rem 0;">
+          سامانه‌های مورد نظر جهت پایش، ارزیابی و استخراج آگهی‌های این فیلتر را انتخاب کنید:
+        </p>
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.86rem; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="r-source-divar" checked />
+            <span style="color:var(--divar); font-weight:700;">🟢 سامانه دیوار (Divar)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.86rem; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="r-source-sheypoor" checked />
+            <span style="color:var(--sheypoor); font-weight:700;">🔵 سامانه شیپور (Sheypoor)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Core Information -->
+      <div class="form-grid">
+        <div class="form-group">
+          <label>عنوان فیلتر:</label>
+          <input type="text" id="r-name" required placeholder="مثلاً: آپارتمان شخصی علی‌آباد کتول" />
+        </div>
+        <div class="form-group">
+          <label>کانال تلگرام مقصد (@channel یا شناسه عددی):</label>
+          <input type="text" id="r-channel" list="channel-datalist" required placeholder="@aliabadmelk" />
+          <datalist id="channel-datalist"></datalist>
+          <small style="color:var(--text-muted); font-size:0.75rem;">می‌توانید کانال را تایپ کنید یا از کانال‌های متصل انتخاب نمایید.</small>
+        </div>
+        <div class="form-group">
+          <label>نوع معامله و ملک (Stage 1):</label>
+          <select id="r-category">
+            <option value="apartment-sell|BUY|APARTMENT">فروش آپارتمان مسکونی (apartment-sell)</option>
+            <option value="apartment-rent|RENT|APARTMENT">رهن و اجاره آپارتمان (apartment-rent)</option>
+            <option value="buy-residential|BUY|ALL_RESIDENTIAL">فروش مسکونی / ویلایی / کلنگی (buy-residential)</option>
+            <option value="residential-rent|RENT|ALL_RESIDENTIAL">رهن و اجاره مسکونی / ویلا (residential-rent)</option>
+            <option value="buy-commercial-property|BUY|COMMERCIAL">فروش تجاری خدماتی / مغازه (buy-commercial-property)</option>
+            <option value="rent-commercial-property|RENT|COMMERCIAL">اجاره تجاری / مغازه (rent-commercial-property)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>کد شهر دیوار (۸۲۳ = علی‌آباد کتول، ۱ = تهران):</label>
+          <input type="text" id="r-city-id" value="823" placeholder="823" />
+        </div>
+        <div class="form-group">
+          <label>حداکثر بودجه خرید / ودیعه رهن (تومان):</label>
+          <input type="number" id="r-max-budget" value="10000000000" />
+        </div>
+        <div class="form-group">
+          <label>حداکثر اجاره ماهانه (تومان - ویژه اجاره):</label>
+          <input type="number" id="r-max-rent" value="0" />
+        </div>
+        <div class="form-group">
+          <label>بازه متراژ (حداقل - حداکثر متر مربع):</label>
+          <div style="display:flex; gap:0.35rem;">
+            <input type="number" id="r-min-area" placeholder="حداقل (75)" value="75" style="width:50%" />
+            <input type="number" id="r-max-area" placeholder="حداکثر (250)" value="250" style="width:50%" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>درصد تلورانس بودجه و متراژ (۱۰٪ تا ۱۵٪):</label>
+          <select id="r-tolerance">
+            <option value="0.10">۱۰٪ تلورانس</option>
+            <option value="0.12">۱۲٪ تلورانس</option>
+            <option value="0.15" selected>۱۵٪ تلورانس (پیشنهادی)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>حداقل امتیاز تطابق (Match Score %):</label>
+          <input type="number" id="r-min-score" min="40" max="100" value="65" />
+        </div>
+        <div class="form-group">
+          <label>سقف سن آگهی در دیوار (ساعت گذشته):</label>
+          <input type="number" id="r-max-age" min="1" max="720" value="24" title="فقط آگهی‌های ۲۴ ساعت گذشته ارسال شوند" />
+        </div>
+      </div>
+
+      <!-- Feature 1: Map Polygon Boundary -->
+      <div class="box-neutral">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <h4>🗺 تعیین محدوده جغرافیایی خط‌کشی‌شده روی نقشه (Polygon):</h4>
+          <span id="polygon-status-badge" class="badge badge-muted">بدون مرزبندی (کل شهر)</span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin:0.25rem 0 0.5rem 0;">
+          روی نقشه کلیک کنید تا رأس‌های محدوده مورد نظر (مانند علی‌آباد کتول و مزرعه کتول) ترسیم شوند.
+        </p>
+        <div id="rule-map"></div>
+        <div class="map-controls-bar">
+          <div style="display:flex; gap:0.35rem;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="clearRulePolygon()">🗑 حذف مرزبندی</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="centerMapOnAliabad()">🎯 مرکز علی‌آباد کتول</button>
+          </div>
+          <span style="font-size:0.75rem; color:var(--text-muted);">با کلیک مکرر روی نقشه چندضلعی دلخواه خود را رسم کنید.</span>
+        </div>
+        <textarea id="r-polygon-json" style="width:100%; height:55px; font-size:0.75rem; font-family:monospace; margin-top:0.4rem; display:none;" placeholder="مختصات چندضلعی [[lat, lon], ...]"></textarea>
+      </div>
+
+      <!-- Feature 2: Anti-Agency Filter -->
+      <div class="box-danger">
+        <h4>🚫 فیلتر حذف آگهی‌های دلال‌ها، املاک و مشاورین (فقط شخصی مالک):</h4>
+        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; font-weight:600; cursor:pointer;">
+          <input type="checkbox" id="r-exclude-agency" checked />
+          عدم ارسال آگهی‌های دارای کلمات املاک، مشاور، بنگاه، دپارتمان، همکار و... (فقط آگهی‌های شخصی مالک)
+        </label>
+        <div class="form-group" style="margin-top:0.5rem;">
+          <label style="font-size:0.78rem;">کلمات کلیدی ممنوعه (جداشده با کاما):</label>
+          <input type="text" id="r-negative-words" value="املاک, مشاور, مشاورین, بنگاه, دپارتمان, دفتر املاک, همکار, همکاران, کمیسیون, آژانس املاک, کارگزاری" />
+        </div>
+      </div>
+
+      <!-- Feature 3: Complete Stage 2 Filters -->
+      <div class="box-neutral">
+        <h4>فیلترهای مرحله دوم (امکانات، اسکلت، جهت، سال ساخت، کابینت و تاسیسات):</h4>
+        <div class="checkbox-row" style="margin-bottom:0.75rem;">
+          <label><input type="checkbox" id="r-parking" checked /> پارکینگ الزامی</label>
+          <label><input type="checkbox" id="r-elevator" checked /> آسانسور الزامی</label>
+          <label><input type="checkbox" id="r-storage" checked /> انباری الزامی</label>
+          <label><input type="checkbox" id="r-balcony" /> بالکن الزامی</label>
+        </div>
+        <div class="form-grid" style="margin-bottom:0.75rem;">
+          <div class="form-group">
+            <label>نوع اسکلت سازه:</label>
+            <select id="r-skeleton">
+              <option value="">فرقی ندارد (همه)</option>
+              <option value="CONCRETE">بتنی (CONCRETE)</option>
+              <option value="STEEL">فلزی (STEEL)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>جهت ساختمان:</label>
+            <select id="r-direction">
+              <option value="">همه جهات</option>
+              <option value="NORTH">شمالی</option>
+              <option value="SOUTH">جنوبی</option>
+              <option value="EAST_WEST">شرقی / غربی</option>
+              <option value="DUAL">دوکله / دو نبش</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>حداقل سال ساخت (مثلاً ۱۴۰۲):</label>
+            <input type="number" id="r-min-build-year" placeholder="بدون محدودیت" min="1350" max="1410" />
+          </div>
+          <div class="form-group">
+            <label>بازه طبقه (حداقل - حداکثر، همکف=۰):</label>
+            <div style="display:flex; gap:0.35rem;">
+              <input type="number" id="r-min-floor" placeholder="از طبقه" style="width:50%" />
+              <input type="number" id="r-max-floor" placeholder="تا طبقه" style="width:50%" />
+            </div>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.65rem;">
+          <label>تعداد خواب (انتخاب چندتایی):</label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" name="r-bedrooms" value="0" /> بدون خواب</label>
+            <label><input type="checkbox" name="r-bedrooms" value="1" /> ۱ خواب</label>
+            <label><input type="checkbox" name="r-bedrooms" value="2" /> ۲ خواب</label>
+            <label><input type="checkbox" name="r-bedrooms" value="3" /> ۳ خواب</label>
+            <label><input type="checkbox" name="r-bedrooms" value="4" /> ۴+ خواب</label>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.65rem;">
+          <label>کابینت ترجیحی:</label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" name="r-cabinet" value="HIGH_GLOSS" /> های‌گلاس</label>
+            <label><input type="checkbox" name="r-cabinet" value="MEMBRANE_WOOD" /> ممبران / چوب</label>
+            <label><input type="checkbox" name="r-cabinet" value="MDF" /> MDF</label>
+            <label><input type="checkbox" name="r-cabinet" value="METAL" /> فلزی</label>
+          </div>
+        </div>
+        <div class="form-grid" style="margin-bottom:0;">
+          <div class="form-group">
+            <label>سرمایش:</label>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="r-cooling" value="DUCT_SPLIT" /> داکت اسپلیت</label>
+              <label><input type="checkbox" name="r-cooling" value="SPLIT_AC" /> کولر گازی</label>
+              <label><input type="checkbox" name="r-cooling" value="WATER_COOLER" /> کولر آبی</label>
+              <label><input type="checkbox" name="r-cooling" value="CHILLER" /> چیلر</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>گرمایش:</label>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="r-heating" value="FLOOR_HEATING" /> گرمایش از کف</label>
+              <label><input type="checkbox" name="r-heating" value="PACKAGE_RADIATOR" /> پکیج/رادیاتور</label>
+              <label><input type="checkbox" name="r-heating" value="CENTRAL_ENGINE" /> موتورخانه</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 4: Telegram Inline Keyboard Buttons -->
+      <div class="box-info">
+        <h4>🔘 دکمه‌های شیشه‌ای و لینک‌های زیر پست تلگرام:</h4>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.6rem 0;">
+          لینک‌ها و دکمه‌های مورد نظر برای نمایش در انتهای پست‌های ارسالی به کانال را انتخاب کنید:
+        </p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.6rem;">
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-divar" checked />
+            🔗 مشاهده آگهی در منبع
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-map" checked />
+            🗺 موقعیت روی نقشه
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-score" checked />
+            📊 درصد تطابق
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+            <input type="checkbox" id="r-btn-contact" checked />
+            📞 تماس با ما
+          </label>
+        </div>
+        <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.8rem; color:var(--text-muted); margin-top:0.65rem; cursor:pointer;">
+          <input type="checkbox" id="r-album-followup" />
+          ارسال پیام دکمه‌دار جداگانه زیر آلبوم‌های چندتصویری (مصرف ۲ برابری سهمیه تلگرام — در حالت عادی لینک‌ها داخل کپشن قرار می‌گیرند)
+        </label>
+      </div>
+
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button type="submit" class="btn" id="btn-save-rule">🚀 ذخیره فیلتر</button>
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('rule-dialog').close()">انصراف</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Channel Add / Branding Edit Dialog -->
+  <dialog id="channel-dialog">
+    <h3 id="channel-dialog-title" style="margin-top:0;">اتصال و تنظیمات کانال تلگرام</h3>
+    <p style="font-size:0.85rem; color:var(--text-muted); margin-top:-0.5rem;">
+      توجه: قبل از اتصال، ربات را در کانال خود مدیر (Admin) کرده و مجوز ارسال پیام (Post Messages) بدهید. اطلاعات تماس زیر به صورت اختصاصی در فوتر پست‌های همین کانال نمایش داده می‌شود.
+    </p>
+    <form id="channel-form" onsubmit="submitChannelForm(event)">
+      <input type="hidden" id="ch-edit-id" value="" />
+      <div class="form-grid">
+        <div class="form-group">
+          <label>شناسه چت یا آی‌دی عمومی کانال:</label>
+          <input type="text" id="ch-chat-id" required placeholder="@aliabadmelk یا -100xxxxxxxxxx" />
+        </div>
+        <div class="form-group">
+          <label>عنوان نمایشی کانال:</label>
+          <input type="text" id="ch-title" placeholder="مثلاً: املاک امیران علی‌آباد کتول" />
+        </div>
+        <div class="form-group">
+          <label>شماره همراه دفتر (برای فوتر کارت):</label>
+          <input type="text" id="ch-mobile" placeholder="09922434338" />
+        </div>
+        <div class="form-group">
+          <label>تلفن ثابت دفتر:</label>
+          <input type="text" id="ch-phone" placeholder="01734241371" />
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0.75rem;">
+        <label>آدرس دفتر املاک:</label>
+        <input type="text" id="ch-address" placeholder="شهر، خیابان، نام آژانس..." />
+      </div>
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label>هشتگ‌های برند اختصاصی (جداشده با کاما):</label>
+        <input type="text" id="ch-hashtags" placeholder="#املاک_امیران, #علی_آباد_ملک" />
+      </div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button type="submit" class="btn" id="btn-save-channel">ثبت و اتصال کانال</button>
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('channel-dialog').close()">انصراف</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Subscription Grant Dialog -->
+  <dialog id="sub-dialog">
+    <h3 style="margin-top:0;">اعطا / تمدید اشتراک کاربر</h3>
+    <form id="sub-form" onsubmit="submitSubForm(event)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>شناسه عددی تلگرام کاربر (Telegram ID):</label>
+          <input type="number" id="sub-tg-id" required placeholder="7309329010" />
+        </div>
+        <div class="form-group">
+          <label>نقش در سیستم (Role):</label>
+          <select id="sub-role">
+            <option value="USER">کاربر عادی (USER)</option>
+            <option value="ADMIN">مدیر (ADMIN)</option>
+            <option value="SUPERADMIN">مدیر ارشد (SUPERADMIN)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>پلن اشتراک:</label>
+          <select id="sub-plan-id">
+            <option value="FREE_TRIAL">تست رایگان (۳ روزه)</option>
+            <option value="BASIC_MONTH">پایه ماهانه (شخصی - ۳۰ روزه)</option>
+            <option value="PRO_MONTH" selected>حرفه‌ای مشاورین املاک (۳۰ روزه)</option>
+            <option value="AGENCY_VIP">ویژه آژانس‌های املاک (۹۰ روزه)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>مدت اعتبار (روز):</label>
+          <input type="number" id="sub-duration-days" value="30" min="1" max="365" />
+        </div>
+      </div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button type="submit" class="btn">اعطای اشتراک</button>
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('sub-dialog').close()">انصراف</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Navigation Tab Bar -->
+  <nav role="tablist" aria-label="بخش‌های پنل مدیریت">
+    <button role="tab" id="tab-overview" aria-selected="true" onclick="switchTab('overview')">📊 داشبورد و وضعیت صف</button>
+    <button role="tab" id="tab-rules" aria-selected="false" onclick="switchTab('rules')">🎯 فیلترهای ۲ مرحله‌ای و نقشه</button>
+    <button role="tab" id="tab-channels" aria-selected="false" onclick="switchTab('channels')">📢 کانال‌های تلگرام (@channel)</button>
+    <button role="tab" id="tab-subscriptions" aria-selected="false" onclick="switchTab('subscriptions')">💎 کاربران و اشتراک‌ها</button>
+    <button role="tab" id="tab-simulator" aria-selected="false" onclick="switchTab('simulator')">🧪 تست قالب جدید و شبیه‌ساز</button>
+    <button role="tab" id="tab-logs" aria-selected="false" onclick="switchTab('logs')">🪵 گزارش‌ها و خطاها</button>
+  </nav>
+
+  <!-- Main Container -->
+  <main>
+    <div id="main-content"></div>
+  </main>
+
+  <div id="toast-region" aria-live="polite"></div>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>

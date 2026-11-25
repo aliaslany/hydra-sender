@@ -1,13 +1,24 @@
 export interface Env {
   DB: D1Database;
+  ASSETS?: Fetcher;
   BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   ADMIN_MASTER_TOKEN: string;
   SUPERADMIN_TELEGRAM_IDS: string;
   DIVAR_PROXY_URL?: string;
+  SHEYPOOR_PROXY_URL?: string;
   DEFAULT_TIMEZONE: string;
   MAX_CHANNEL_MSGS_PER_MIN: string;
   DEFAULT_TOLERANCE_PCT: string;
+}
+
+export interface ChannelBranding {
+  chat_id: string;
+  title?: string | null;
+  contact_mobile?: string | null;
+  contact_phone?: string | null;
+  office_address?: string | null;
+  brand_hashtags?: string[];
 }
 
 export interface Stage2Filters {
@@ -51,15 +62,25 @@ export interface FilterRule {
   exclude_agency?: number;
   max_post_age_hours?: number;
   negative_keywords_json?: string;
+  show_btn_divar?: number;
+  show_btn_map?: number;
+  show_btn_score?: number;
+  show_btn_contact?: number;
+  album_followup_buttons?: number;
+  source_divar?: number;
+  source_sheypoor?: number;
 }
 
 export interface ParsedDivarAd {
   token: string;
+  source?: 'divar' | 'sheypoor';
+  url?: string;
   title: string;
   description: string;
   cityPersian: string;
   districtPersian: string;
   dealType: 'BUY' | 'RENT';
+  propertyCategory?: 'APARTMENT' | 'VILLA_LAND' | 'OLD_HOUSE' | 'COMMERCIAL';
   propertyTypeFa?: string;
   totalPrice: number;
   pricePerM2: number;
@@ -74,6 +95,7 @@ export interface ParsedDivarAd {
   floorText: string;
   unitsPerFloor?: string | null;
   primaryPhotoUrl: string | null;
+  imageUrls?: string[];
   latitude: number | null;
   longitude: number | null;
   postTimestamp: number;

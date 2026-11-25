@@ -1,5 +1,5 @@
 import { Env, FilterRule, ParsedDivarAd } from '../types';
-import { extractIntFromPersian, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
+import { extractIntFromPersian, inferDealType, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
 
 const DIVAR_HEADERS = {
   'Content-Type': 'application/json',
@@ -8,6 +8,15 @@ const DIVAR_HEADERS = {
   'Origin': 'https://divar.ir',
   'Referer': 'https://divar.ir/'
 };
+
+function normalizeDivarCategorySlug(slug?: string): string {
+  if (!slug) return 'residential-sell';
+  if (slug === 'buy-residential') return 'residential-sell';
+  if (slug === 'residential-rent') return 'residential-rent';
+  if (slug === 'buy-commercial-property') return 'commercial-sell';
+  if (slug === 'commercial-rent') return 'commercial-rent';
+  return slug;
+}
 
 export interface DivarSearchResponse {
   tokens: string[];
@@ -32,8 +41,9 @@ export async function searchDivarPostList(
     districts = JSON.parse(rule.districts_json || '[]');
   } catch {}
 
+  const categorySlug = normalizeDivarCategorySlug(rule.divar_category_slug);
   const formData: Record<string, any> = {
-    category: { str: { value: rule.divar_category_slug || 'apartment-sell' } },
+    category: { str: { value: categorySlug } },
     sort: { str: { value: 'sort_date' } }
   };
 
@@ -72,10 +82,13 @@ export async function searchDivarPostList(
     city_ids: cityIds,
     source_view: 'CATEGORY',
     disable_recommendation: true,
-    form_data: { data: formData }
+    form_data: { data: formData },
+    search_data: {
+      form_data: { data: formData }
+    }
   };
 
-  if (pagination && pagination.lastPostDate) {
+  if (pagination && pagination.lastPostDate && !pagination.lastPostDate.startsWith('sp_') && pagination.page <= 50) {
     payload.pagination_data = {
       '@type': 'type.googleapis.com/post_list.PaginationData',
       last_post_date: pagination.lastPostDate,
@@ -93,7 +106,11 @@ export async function searchDivarPostList(
   });
 
   if (!res.ok) {
-    throw new Error(`Divar search failed with HTTP ${res.status}`);
+    let errDetail = '';
+    try {
+      errDetail = (await res.text()).slice(0, 300);
+    } catch {}
+    throw new Error(`Divar search failed with HTTP ${res.status}${errDetail ? `: ${errDetail}` : ''}`);
   }
 
   const data: any = await res.json();
@@ -109,10 +126,64 @@ export async function searchDivarPostList(
     }
   }
 
-  const nextCursorDate = data?.pagination?.data?.last_post_date || null;
-  const searchUid = data?.pagination?.data?.search_uid || null;
+  const nextCursorDate = data?.pagination?.data?.last_post_date ?? null;
+  const searchUid = data?.pagination?.data?.search_uid ?? null;
 
   return { tokens, nextCursorDate, searchUid };
+}
+
+function parseDivarPersianRelativeTime(text: string): number | null {
+  if (!text) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const norm = normalizePersianText(text);
+
+  if (norm.includes('لحظاتی پیش') || norm.includes('دقایقی پیش') || norm.includes('چند ثانیه پیش')) {
+    return now - 300;
+  }
+  if (norm.includes('یک ربع پیش')) {
+    return now - 900;
+  }
+  if (norm.includes('نیم ساعت پیش')) {
+    return now - 1800;
+  }
+
+  const hourMatch = norm.match(/(\d+)\s*ساعت\s*پیش/);
+  if (hourMatch) {
+    const hours = parseInt(hourMatch[1], 10);
+    return now - hours * 3600;
+  }
+
+  if (norm.includes('پریروز')) {
+    return now - 2 * 86400;
+  }
+  if (norm.includes('دیروز')) {
+    return now - 86400;
+  }
+
+  const dayMatch = norm.match(/(\d+)\s*روز\s*پیش/);
+  if (dayMatch) {
+    const days = parseInt(dayMatch[1], 10);
+    return now - days * 86400;
+  }
+
+  const weekMatch = norm.match(/(\d+)\s*هفته\s*پیش/);
+  if (weekMatch) {
+    const weeks = parseInt(weekMatch[1], 10);
+    return now - weeks * 7 * 86400;
+  }
+
+  const monthMatch = norm.match(/(\d+)\s*ماه\s*پیش/);
+  if (monthMatch) {
+    const months = parseInt(monthMatch[1], 10);
+    return now - months * 30 * 86400;
+  }
+
+  return null;
+}
+
+function convertDivarWebpToJpg(url: string): string {
+  if (!url) return url;
+  return url.replace('/webp_post/', '/post/').replace(/\.webp($|\?)/, '.jpg$1');
 }
 
 export async function fetchDivarPostDetail(
@@ -132,18 +203,34 @@ export async function fetchDivarPostDetail(
   const sections: any[] = raw?.sections || [];
   let title = raw?.share?.title || raw?.seo?.title || 'آگهی ملک';
   let description = raw?.share?.description || '';
-  const cityPersian = raw?.web_info?.city_persian || 'علی‌آباد کتول';
-  const districtPersian = raw?.web_info?.district_persian || '';
+  const cityPersian =
+    raw?.web_info?.city_persian ||
+    raw?.city?.name ||
+    raw?.seo?.web_info?.city_persian ||
+    raw?.seo?.post_seo_schema?.web_info?.city_persian ||
+    'علی‌آباد کتول';
+  const districtPersian =
+    raw?.web_info?.district_persian ||
+    raw?.seo?.web_info?.district_persian ||
+    raw?.seo?.post_seo_schema?.web_info?.district_persian ||
+    '';
   let totalPrice = 0;
   let pricePerM2 = 0;
   let credit = 0;
   let rent = 0;
   let isConvertible = false;
   let area = 0;
+  let landArea: number | null = null;
+  let deedStatus: string | null = null;
+  let unitsPerFloor: string | null = null;
+  let flooring: string | null = null;
+  let buildingFacade: string | null = null;
+  let evacuationStatus: string | null = null;
   let bedrooms: number | null = null;
   let buildYear: number | null = null;
   let floorNumber: number | null = null;
   let floorText = '';
+  const imageUrls: string[] = [];
   let primaryPhotoUrl: string | null = null;
   let latitude: number | null = null;
   let longitude: number | null = null;
@@ -166,19 +253,47 @@ export async function fetchDivarPostDetail(
   const widgetSpecs: ParsedDivarAd['specs'] = {};
 
   for (const sec of sections) {
+    const sName = String(sec?.section_name || '').toUpperCase();
+    const isForbiddenSection = sName.includes('SIMILAR') || sName.includes('RELATED') || sName.includes('RECOMMEND') || sName.includes('AGENCY_POSTS') || sName.includes('BANNER');
+    const isImageSection = (sName === 'IMAGE' || sName === 'MEDIA' || !sName) && !isForbiddenSection;
+
     const widgets: any[] = sec?.widgets || [];
     for (const w of widgets) {
       const wType = w?.widget_type;
       const wData = w?.data || {};
 
+      // Parse relative time if available in widgets (e.g. SUBTITLE_ROW or subtitle / title)
+      if (wData.title && typeof wData.title === 'string' && wData.title.includes('پیش')) {
+        const parsed = parseDivarPersianRelativeTime(wData.title);
+        if (parsed) postTimestamp = parsed;
+      }
+      if (wData.subtitle && typeof wData.subtitle === 'string' && wData.subtitle.includes('پیش')) {
+        const parsed = parseDivarPersianRelativeTime(wData.subtitle);
+        if (parsed) postTimestamp = parsed;
+      }
+
       if (wType === 'LEGEND_TITLE_ROW' && wData.title) {
         title = wData.title;
       } else if (wType === 'DESCRIPTION_ROW' && wData.text) {
         description += '\n' + wData.text;
-      } else if (wType === 'IMAGE_CAROUSEL' || wType === 'IMAGE_SLIDER_ROW') {
+      } else if (isImageSection && (wType === 'IMAGE_CAROUSEL' || wType === 'IMAGE_SLIDER_ROW' || wType === 'IMAGE_ROW')) {
         const items = wData.items || [];
-        if (items.length > 0 && !primaryPhotoUrl) {
-          primaryPhotoUrl = items[0]?.image?.url || items[0]?.image_url || null;
+        for (const it of items) {
+          const rawU = it?.image?.url || it?.image_url;
+          if (rawU && typeof rawU === 'string') {
+            const u = convertDivarWebpToJpg(rawU);
+            if (!imageUrls.includes(u)) {
+              imageUrls.push(u);
+            }
+          }
+        }
+        if (wData.image?.url) {
+          const u = convertDivarWebpToJpg(wData.image.url);
+          if (!imageUrls.includes(u)) imageUrls.push(u);
+        }
+        if (wData.image_url) {
+          const u = convertDivarWebpToJpg(wData.image_url);
+          if (!imageUrls.includes(u)) imageUrls.push(u);
         }
       } else if (wType === 'MAP_ROW') {
         latitude =
@@ -197,10 +312,15 @@ export async function fetchDivarPostDetail(
           if (k.includes('متراژ')) area = extractIntFromPersian(v);
           else if (k.includes('ساخت')) buildYear = extractIntFromPersian(v);
           else if (k.includes('اتاق')) bedrooms = v.includes('بدون') ? 0 : extractIntFromPersian(v);
-          else if (k.includes('پارکینگ')) widgetSpecs.parking = !item.available ? false : !v.includes('ندارد');
-          else if (k.includes('آسانسور')) widgetSpecs.elevator = !item.available ? false : !v.includes('ندارد');
-          else if (k.includes('انباری')) widgetSpecs.storage = !item.available ? false : !v.includes('ندارد');
-          else if (k.includes('بالکن')) widgetSpecs.balcony = !item.available ? false : !v.includes('ندارد');
+          else if (k.includes('پارکینگ')) {
+            widgetSpecs.parking = typeof item.available === 'boolean' ? item.available : (!v.includes('ندارد') && (v.includes('دارد') || v.length === 0));
+          } else if (k.includes('آسانسور')) {
+            widgetSpecs.elevator = typeof item.available === 'boolean' ? item.available : (!v.includes('ندارد') && (v.includes('دارد') || v.length === 0));
+          } else if (k.includes('انباری')) {
+            widgetSpecs.storage = typeof item.available === 'boolean' ? item.available : (!v.includes('ندارد') && (v.includes('دارد') || v.length === 0));
+          } else if (k.includes('بالکن')) {
+            widgetSpecs.balcony = typeof item.available === 'boolean' ? item.available : (!v.includes('ندارد') && (v.includes('دارد') || v.length === 0));
+          }
         }
       } else if (wType === 'UNEXPANDABLE_ROW' || wType === 'EXPANDABLE_ROW') {
         const k = normalizePersianText(wData.title);
@@ -211,14 +331,26 @@ export async function fetchDivarPostDetail(
         else if (k.includes('ودیعه')) credit = extractIntFromPersian(v);
         else if (k.includes('اجاره')) rent = v.includes('رایگان') || v.includes('کامل') ? 0 : extractIntFromPersian(v);
         else if (k.includes('تبدیل')) isConvertible = true;
+        else if (k.includes('متراژ زمین') || k.includes('مساحت زمین')) landArea = extractIntFromPersian(v);
         else if (k.includes('متراژ') && !area) area = extractIntFromPersian(v);
         else if (k.includes('طبقه')) {
           floorText = v;
           floorNumber = v.includes('همکف') ? 0 : extractIntFromPersian(v);
-        } else if (k.includes('جهت ساختمان')) {
+        } else if (k.includes('واحد در طبقه') || k.includes('تعداد واحد')) {
+          unitsPerFloor = v;
+        } else if (k.includes('سند')) {
+          deedStatus = v;
+        } else if (k.includes('جنس کف') || k.includes('کفپوش')) {
+          flooring = v;
+        } else if (k.includes('نمای ساختمان') || k.includes('نوع نما')) {
+          buildingFacade = v;
+        } else if (k.includes('وضعیت سکونت') || k.includes('تخلیه')) {
+          evacuationStatus = v;
+        } else if (k.includes('جهت ساختمان') || k.includes('جهت ملک')) {
           if (v.includes('شمالی')) widgetSpecs.direction = 'NORTH';
           else if (v.includes('جنوبی')) widgetSpecs.direction = 'SOUTH';
           else if (v.includes('شرقی') || v.includes('غربی')) widgetSpecs.direction = 'EAST_WEST';
+          else if (v.includes('دو کله') || v.includes('دو نبش')) widgetSpecs.direction = 'DUAL';
         } else if (k.includes('کابینت')) {
           if (v.includes('های گلاس') || v.includes('هایگلاس')) widgetSpecs.cabinet = 'HIGH_GLOSS';
           else if (v.includes('ممبران') || v.includes('چوب')) widgetSpecs.cabinet = 'MEMBRANE_WOOD';
@@ -245,9 +377,17 @@ export async function fetchDivarPostDetail(
     pricePerM2 = Math.round(totalPrice / area);
   }
 
+  const categorySlug =
+    raw?.web_info?.category_slug ||
+    raw?.web_info?.category_slug_persian ||
+    raw?.seo?.web_info?.category_slug_persian ||
+    raw?.seo?.bread_crumb?.[0]?.search_data?.form_data?.data?.category?.str?.value ||
+    '';
+
   // Merge structured KEY_VALUE specs with Persian NLP fallback from description
   const nlpSpecs = parseDescriptionNLP(description);
-  const extendedAttrs = parseExtendedAttributesNLP(description, title, raw?.web_info?.category_slug_persian);
+  const extendedAttrs = parseExtendedAttributesNLP(description, title, categorySlug);
+  const actualDealType = inferDealType(categorySlug, totalPrice, credit, rent, dealType);
 
   const mergedSpecs: ParsedDivarAd['specs'] = {
     parking: widgetSpecs.parking ?? nlpSpecs.parking,
@@ -267,23 +407,31 @@ export async function fetchDivarPostDetail(
     description,
     cityPersian,
     districtPersian,
-    dealType,
+    dealType: actualDealType,
     totalPrice,
     pricePerM2,
     credit,
     rent,
     isConvertible,
     area,
+    landArea,
     bedrooms,
     buildYear,
     floorNumber,
     floorText,
-    primaryPhotoUrl,
+    unitsPerFloor: unitsPerFloor ?? extendedAttrs.unitsPerFloor ?? null,
+    primaryPhotoUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+    imageUrls,
     latitude,
     longitude,
     postTimestamp,
     businessType,
     specs: mergedSpecs,
-    ...extendedAttrs
+    ...extendedAttrs,
+    ...(deedStatus ? { deedStatus } : {}),
+    ...(flooring ? { flooring } : {}),
+    ...(buildingFacade ? { buildingFacade } : {}),
+    ...(evacuationStatus ? { evacuationStatus } : {}),
+    ...(landArea ? { landArea } : {})
   };
 }

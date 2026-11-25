@@ -19,6 +19,34 @@ export function normalizePersianText(input: string | undefined | null): string {
     .trim();
 }
 
+export function normalizeCityKey(name: string | undefined | null): string {
+  return normalizePersianText(name)
+    .replace(/آ/g, 'ا')
+    .replace(/[\s_-]+/g, ' ')
+    .trim();
+}
+
+export const CITY_PERSIAN_BY_ID: Record<string, string> = {
+  '1': 'تهران',
+  '2': 'مشهد',
+  '3': 'کرج',
+  '4': 'شیراز',
+  '5': 'اصفهان',
+  '6': 'تبریز',
+  '7': 'اهواز',
+  '8': 'قم',
+  '11': 'رشت',
+  '24': 'گرگان',
+  '25': 'ساری',
+  '823': 'علی آباد کتول'
+};
+
+export function normalizeStringArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof val === 'string' && val.trim()) return [val.trim()];
+  return [];
+}
+
 export function extractIntFromPersian(input: string | undefined | null): number {
   const norm = normalizePersianText(input).replace(/[,٬]/g, '');
   const match = norm.match(/\d+/);
@@ -37,11 +65,13 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   }
 
   // 2. Building Direction (جهت ساختمان)
+  const bStart = '(?:^|[\\s،,.\\-/()])';
+  const bEnd = '(?=$|[\\s،,.\\-/()])';
   if (/(دو\s*کله|دو\s*نبش|شمالی\s*و?\s*جنوبی)/.test(norm)) {
     extracted.direction = 'DUAL';
-  } else if (/\bشمالی\b/.test(norm)) {
+  } else if (new RegExp(`${bStart}شمالی${bEnd}`).test(norm)) {
     extracted.direction = 'NORTH';
-  } else if (/\bجنوبی\b/.test(norm)) {
+  } else if (new RegExp(`${bStart}جنوبی${bEnd}`).test(norm)) {
     extracted.direction = 'SOUTH';
   } else if (/(شرقی|غربی)/.test(norm)) {
     extracted.direction = 'EAST_WEST';
@@ -83,7 +113,7 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   ];
   for (const [key, pattern] of amenities) {
     const negRegex = new RegExp(`(بدون|فاقد|ندارد)\\s+${pattern}|${pattern}\\s+ندارد`);
-    const posRegex = new RegExp(`(دارای|با|فول)\\s+.*?\\b${pattern}\\b|\\b${pattern}\\s+(?:سندی|مزاحم|اختصاصی|دارد)`);
+    const posRegex = new RegExp(`(?:^|[\\s،,.])(?:دارای|با|فول)(?:\\s+[^\\n،.]{0,20})?\\s+${pattern}(?=$|[\\s،,.])|${bStart}${pattern}\\s+(?:سندی|مزاحم|اختصاصی|دارد)(?=$|[\\s،,.])`);
     if (negRegex.test(norm)) {
       extracted[key] = false;
     } else if (posRegex.test(norm)) {
@@ -94,32 +124,117 @@ export function parseDescriptionNLP(description: string): ParsedDivarAd['specs']
   return extracted;
 }
 
+export type NormalizedPropertyCategory = 'APARTMENT' | 'VILLA_LAND' | 'OLD_HOUSE' | 'COMMERCIAL';
+
+const PROXIMITY_COMMERCIAL_RE = /(?:نزدیک(?:\s+به)?|دسترسی(?:\s+به|\s+عالی\s+به)?|روبروی|رو\s+به\s+روی|مجاور|کنار|جنب|پشت)\s+(?:مراکز\s+)?(?:مغازه|تجاری|اداری|بازار)/g;
+
+/**
+ * Classifies a listing into a normalized property category using structured category metadata
+ * first, then title, and finally proximity-filtered description fallback.
+ */
+export function inferPropertyCategory(
+  title: string,
+  description: string,
+  categorySlug?: string
+): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } {
+  const catNorm = normalizePersianText(categorySlug || '').toLowerCase();
+  const titleNorm = normalizePersianText(title).toLowerCase();
+  const descClean = normalizePersianText(description).toLowerCase().replace(PROXIMITY_COMMERCIAL_RE, ' ');
+
+  const isResidentialCat = /(residential|مسکونی|آپارتمان|ویلا|خانه)/.test(catNorm) &&
+    !/(commercial|office|shop|store|تجاری|اداری|مغازه)/.test(catNorm);
+
+  const classifyCommercialText = (text: string): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } | null => {
+    if (/(commercial|shop|office|store|industrial|suite|تجاری|اداری|مغازه|صنعتی|کارگاه|سوله|غرفه|پاساژ|دفتر\s*کار|مطب)/.test(text)) {
+      return {
+        propertyCategory: 'COMMERCIAL',
+        propertyTypeFa: /(مغازه|shop|غرفه)/.test(text) ? 'مغازه' : 'تجاری خدماتی'
+      };
+    }
+    return null;
+  };
+
+  const classifyResidentialText = (text: string): { propertyCategory: NormalizedPropertyCategory; propertyTypeFa: string } | null => {
+    if (/(apartment|presell|آپارتمان|پنت\s*هاوس|سوئیت|مسکن\s*مهر)/.test(text)) {
+      return { propertyCategory: 'APARTMENT', propertyTypeFa: 'آپارتمان مسکونی' };
+    }
+    if (/(villa|house-villa|ویلایی|باغ\s*ویلا|خانه\s*ویلایی|خانه\s*و?\s*ویلا|ویلا\s*باغ|دوبلکس|تریبلکس|ویلا)/.test(text)) {
+      return { propertyCategory: 'VILLA_LAND', propertyTypeFa: 'ویلایی' };
+    }
+    if (/(plot|old|land|کلنگی|زمین|باغ|کشاورزی|شالیزار|مزرعه|مستغلات|چهاردیواری)/.test(text)) {
+      return { propertyCategory: 'OLD_HOUSE', propertyTypeFa: 'زمین / کلنگی' };
+    }
+    return null;
+  };
+
+  // 1. Structured category / breadcrumb takes top precedence
+  if (catNorm) {
+    const commCat = classifyCommercialText(catNorm);
+    if (commCat) return commCat;
+    const resCat = classifyResidentialText(catNorm);
+    if (resCat) return resCat;
+  }
+
+  // 2. Listing title is next most reliable
+  const commTitle = !isResidentialCat ? classifyCommercialText(titleNorm) : null;
+  if (commTitle) return commTitle;
+  const resTitle = classifyResidentialText(titleNorm);
+  if (resTitle) return resTitle;
+
+  // 3. Description fallback (stripping proximity phrases like "نزدیک مغازه")
+  const commDesc = !isResidentialCat ? classifyCommercialText(descClean) : null;
+  if (commDesc) return commDesc;
+  const resDesc = classifyResidentialText(descClean);
+  if (resDesc) return resDesc;
+
+  return { propertyCategory: 'APARTMENT', propertyTypeFa: 'آپارتمان مسکونی' };
+}
+
+export function doesPropertyCategoryMatch(
+  adCategory: NormalizedPropertyCategory,
+  rulePropertyType: FilterRule['property_type']
+): boolean {
+  switch (rulePropertyType) {
+    case 'ALL_RESIDENTIAL':
+      return adCategory !== 'COMMERCIAL';
+    case 'COMMERCIAL':
+      return adCategory === 'COMMERCIAL';
+    case 'APARTMENT':
+      return adCategory === 'APARTMENT';
+    case 'VILLA_LAND':
+      return adCategory === 'VILLA_LAND' || adCategory === 'OLD_HOUSE';
+    case 'OLD_HOUSE':
+      return adCategory === 'OLD_HOUSE';
+    default:
+      return true;
+  }
+}
+
 export function parseExtendedAttributesNLP(description: string, title: string, categorySlug?: string): Partial<ParsedDivarAd> {
   const norm = normalizePersianText(`${title} ${description}`);
   const attrs: Partial<ParsedDivarAd> = {};
 
-  // 1. Property Type
-  if (/(مغازه|تجاری|خدماتی|دفتر\s*کار)/.test(norm) || (categorySlug && categorySlug.includes('commercial'))) {
-    attrs.propertyTypeFa = /مغازه/.test(norm) ? 'مغازه' : 'تجاری خدماتی';
-  } else if (/(ویلایی|باغ\s*ویلا|خانه\s*ویلایی|دوبلکس|تریبلکس)/.test(norm) || (categorySlug && categorySlug.includes('villa'))) {
-    attrs.propertyTypeFa = 'ویلایی';
-  } else if (/(زمین|کلنگی|مستغلات|چهاردیواری)/.test(norm) || (categorySlug && categorySlug.includes('land'))) {
-    attrs.propertyTypeFa = 'زمین کلنگی';
-  } else {
-    attrs.propertyTypeFa = 'آپارتمان مسکونی';
-  }
+  // 1. Property Type & Normalized Category
+  const inferredCat = inferPropertyCategory(title, description, categorySlug);
+  attrs.propertyCategory = inferredCat.propertyCategory;
+  attrs.propertyTypeFa = inferredCat.propertyTypeFa;
 
   // 2. Units Per Floor
-  if (/تک\s*واحدی/.test(norm)) attrs.unitsPerFloor = 'تک واحدی';
-  else if (/۲\s*واحدی|دو\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۲ واحدی';
-  else if (/۳\s*واحدی|سه\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۳ واحدی';
-  else if (/۴\s*واحدی|چهار\s*واحدی/.test(norm)) attrs.unitsPerFloor = '۴ واحدی';
+  const unitsKeyMatch = norm.match(/تعداد\s*واحد\s*(?:در\s*طبقه)?\s*[:：]?\s*(\d+)/);
+  if (/تک\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '1') attrs.unitsPerFloor = 'تک واحدی';
+  else if (/2\s*واحدی|دو\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '2') attrs.unitsPerFloor = '۲ واحدی';
+  else if (/3\s*واحدی|سه\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '3') attrs.unitsPerFloor = '۳ واحدی';
+  else if (/4\s*واحدی|چهار\s*واحدی/.test(norm) || unitsKeyMatch?.[1] === '4') attrs.unitsPerFloor = '۴ واحدی';
+  else if (unitsKeyMatch?.[1]) attrs.unitsPerFloor = `${unitsKeyMatch[1]} واحدی`;
 
   // 3. Deed Status (وضعیت سند)
   if (/تک\s*برگ/.test(norm)) attrs.deedStatus = 'تک‌برگ';
   else if (/شش\s*دانگ/.test(norm)) attrs.deedStatus = 'شش‌دانگ';
   else if (/قولنامه/.test(norm)) attrs.deedStatus = 'قولنامه‌ای با کد رهگیری';
   else if (/وکالتی/.test(norm)) attrs.deedStatus = 'وکالتی محضری';
+  else if (/سند\s*دار|دارای\s*سند|سند\s*رسمی|سند\s*آزاد/.test(norm)) attrs.deedStatus = 'دارای سند رسمی';
+  else if (/سند\s*شورایی/.test(norm)) attrs.deedStatus = 'سند شورایی';
+  else if (/سند\s*مشاع/.test(norm)) attrs.deedStatus = 'سند مشاع';
 
   // 4. Facade (نوع نما)
   if (/نما\s*رومی/.test(norm)) attrs.buildingFacade = 'سنگ رومی کلاسیک';
@@ -154,12 +269,148 @@ export function parseExtendedAttributesNLP(description: string, title: string, c
   return attrs;
 }
 
+export function inferDealType(
+  categoryText: string,
+  totalPrice: number,
+  credit: number,
+  rent: number,
+  fallback: 'BUY' | 'RENT'
+): 'BUY' | 'RENT' {
+  const norm = normalizePersianText(categoryText).toLowerCase();
+  if (/(rent|اجاره|رهن|کرایه)/.test(norm)) return 'RENT';
+  if (/(sell|buy|presell|plot-old|خرید|فروش|پیش\s*فروش)/.test(norm)) return 'BUY';
+  if ((credit > 0 || rent > 0) && totalPrice === 0) return 'RENT';
+  if (totalPrice > 0 && credit === 0 && rent === 0) return 'BUY';
+  return fallback;
+}
+
 export function computeEquivalentRahn(creditToman: number, rentToman: number): number {
   return Math.round(creditToman + rentToman / 0.03);
 }
 
+/**
+ * Computes a tight structural fingerprint for cross-source deduplication (Divar <-> Sheypoor).
+ * Returns null if core dimensions (price, area, city) are missing so incomplete listings don't collide.
+ */
+export function computeAdFingerprint(ad: ParsedDivarAd): string | null {
+  const effectivePrice = ad.dealType === 'BUY'
+    ? (ad.totalPrice || 0)
+    : computeEquivalentRahn(ad.credit || 0, ad.rent || 0);
+  if (effectivePrice <= 0 || !ad.area || ad.area <= 0) return null;
+
+  const cityKey = normalizeCityKey(ad.cityPersian || '');
+  if (!cityKey) return null;
+
+  const priceStep = ad.dealType === 'BUY' ? 10_000_000 : 1_000_000;
+  const priceBucket = Math.round(effectivePrice / priceStep);
+  const areaExact = Math.round(ad.area);
+  const beds = ad.bedrooms !== null && ad.bedrooms !== undefined ? String(ad.bedrooms) : 'x';
+  const buildYear = ad.buildYear !== null && ad.buildYear !== undefined ? String(ad.buildYear) : 'x';
+  const floor = ad.floorNumber !== null && ad.floorNumber !== undefined ? String(ad.floorNumber) : 'x';
+  return `${ad.dealType}:${cityKey}:${priceBucket}:${areaExact}:${beds}:${buildYear}:${floor}`;
+}
+
+export function parseNormalizedDistricts(districtsJson?: string | null): { named: string[]; hasRawEntries: boolean } {
+  try {
+    const raw: unknown = JSON.parse(districtsJson || '[]');
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return { named: [], hasRawEntries: false };
+    }
+    const named = raw
+      .map((d) => normalizeCityKey(String(d)))
+      .filter((d) => Boolean(d) && !/^\d+$/.test(d));
+    return { named, hasRawEntries: true };
+  } catch {
+    return { named: [], hasRawEntries: false };
+  }
+}
+
+export function doesDistrictMatch(
+  adDistrict: string | undefined | null,
+  adTitle: string | undefined | null,
+  namedDistricts: string[]
+): boolean {
+  if (namedDistricts.length === 0) return true;
+  const distNorm = normalizeCityKey(adDistrict || '');
+  if (distNorm) {
+    return namedDistricts.some((d) => distNorm === d || distNorm.includes(d) || d.includes(distNorm));
+  }
+  const titleNorm = normalizeCityKey(adTitle || '');
+  return titleNorm ? namedDistricts.some((d) => titleNorm.includes(d)) : false;
+}
+
+function rejectMatch(reason: string, budgetDeviationPct = 0): MatchResult {
+  return {
+    eligible: false,
+    score: 0,
+    budgetScore: 0,
+    areaScore: 0,
+    specsScore: 0,
+    budgetDeviationPct,
+    areaDeviationPct: 0,
+    reasons: [reason]
+  };
+}
+
 export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResult {
   const reasons: string[] = [];
+
+  // ==========================================
+  // Check -2: Deal Type Enforcement (BUY vs RENT)
+  // ==========================================
+  if (ad.dealType && rule.deal_type && ad.dealType !== rule.deal_type) {
+    return rejectMatch(
+      `نوع معامله آگهی (${ad.dealType === 'RENT' ? 'رهن و اجاره' : 'خرید و فروش'}) با فیلتر مطابقت ندارد`
+    );
+  }
+
+  // ==========================================
+  // Check -1: Property Category Enforcement (guards mixed-category feeds like Sheypoor c=43603)
+  // ==========================================
+  if (rule.property_type) {
+    const adCategory = ad.propertyCategory || inferPropertyCategory(ad.title || '', ad.description || '').propertyCategory;
+    if (!doesPropertyCategoryMatch(adCategory, rule.property_type)) {
+      return rejectMatch(
+        `نوع ملک آگهی (${ad.propertyTypeFa || adCategory}) با فیلتر (${rule.property_type}) مطابقت ندارد`
+      );
+    }
+  }
+
+  // ==========================================
+  // Check 0: Strict City Match Enforcement (guards Sheypoor VIP/neighboring city bleed)
+  // ==========================================
+  if (ad.cityPersian) {
+    try {
+      const ruleCitiesRaw: string[] = JSON.parse(rule.city_ids_json || '[]');
+      const allowedNormalized = ruleCitiesRaw
+        .map((c) => CITY_PERSIAN_BY_ID[c] || c)
+        .filter((c) => !/^\d+$/.test(c))
+        .map((c) => normalizeCityKey(c))
+        .filter(Boolean);
+
+      if (allowedNormalized.length > 0) {
+        const adCityNorm = normalizeCityKey(ad.cityPersian);
+        const matchesCity = allowedNormalized.some(
+          (allowed) => adCityNorm === allowed || adCityNorm.includes(allowed) || allowed.includes(adCityNorm)
+        );
+        if (!matchesCity) {
+          return rejectMatch(`شهر آگهی (${ad.cityPersian}) با شهر انتخاب‌شده در فیلتر مطابقت ندارد`);
+        }
+      }
+    } catch {}
+  }
+
+  // ==========================================
+  // Check 0B: District Filter Enforcement (guards whole-city feeds such as Sheypoor)
+  // ==========================================
+  const districtFilter = parseNormalizedDistricts(rule.districts_json);
+  if (districtFilter.named.length > 0 && !doesDistrictMatch(ad.districtPersian, ad.title, districtFilter.named)) {
+    return rejectMatch(
+      ad.districtPersian
+        ? `محله آگهی (${ad.districtPersian}) با محله‌های انتخاب‌شده در فیلتر مطابقت ندارد`
+        : 'محله آگهی با محله‌های انتخاب‌شده در فیلتر مطابقت ندارد'
+    );
+  }
 
   // ==========================================
   // Check 1: Exclude Real Estate Agency / Broker Ads
@@ -411,45 +662,50 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
     }
   }
 
-  if (s2.skeleton && s2.skeleton.length > 0) {
+  const skelFilter = normalizeStringArray(s2.skeleton);
+  if (skelFilter.length > 0) {
     activeWeight += 2.0;
-    if (ad.specs.skeleton && s2.skeleton.includes(ad.specs.skeleton)) {
+    if (ad.specs.skeleton && skelFilter.includes(ad.specs.skeleton)) {
       earnedWeight += 2.0;
     } else if (!ad.specs.skeleton) {
       earnedWeight += 1.0;
     }
   }
 
-  if (s2.direction && s2.direction.length > 0) {
+  const dirFilter = normalizeStringArray(s2.direction);
+  if (dirFilter.length > 0) {
     activeWeight += 2.0;
-    if (ad.specs.direction && s2.direction.includes(ad.specs.direction)) {
+    if (ad.specs.direction && dirFilter.includes(ad.specs.direction)) {
       earnedWeight += 2.0;
     } else if (!ad.specs.direction) {
       earnedWeight += 1.0;
     }
   }
 
-  if (s2.cabinet && s2.cabinet.length > 0) {
+  const cabFilter = normalizeStringArray(s2.cabinet);
+  if (cabFilter.length > 0) {
     activeWeight += 1.0;
-    if (ad.specs.cabinet && s2.cabinet.includes(ad.specs.cabinet)) {
+    if (ad.specs.cabinet && cabFilter.includes(ad.specs.cabinet)) {
       earnedWeight += 1.0;
     } else if (!ad.specs.cabinet) {
       earnedWeight += 0.5;
     }
   }
 
-  if (s2.cooling && s2.cooling.length > 0) {
+  const coolFilter = normalizeStringArray(s2.cooling);
+  if (coolFilter.length > 0) {
     activeWeight += 0.5;
-    if (ad.specs.cooling && ad.specs.cooling.some((c) => s2.cooling!.includes(c as any))) {
+    if (ad.specs.cooling && ad.specs.cooling.some((c) => coolFilter.includes(c))) {
       earnedWeight += 0.5;
     } else if (!ad.specs.cooling) {
       earnedWeight += 0.25;
     }
   }
 
-  if (s2.heating && s2.heating.length > 0) {
+  const heatFilter = normalizeStringArray(s2.heating);
+  if (heatFilter.length > 0) {
     activeWeight += 0.5;
-    if (ad.specs.heating && ad.specs.heating.some((h) => s2.heating!.includes(h as any))) {
+    if (ad.specs.heating && ad.specs.heating.some((h) => heatFilter.includes(h))) {
       earnedWeight += 0.5;
     } else if (!ad.specs.heating) {
       earnedWeight += 0.25;
