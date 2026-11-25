@@ -310,6 +310,35 @@ export function computeAdFingerprint(ad: ParsedDivarAd): string | null {
   return `${ad.dealType}:${cityKey}:${priceBucket}:${areaExact}:${beds}:${buildYear}:${floor}`;
 }
 
+export function parseNormalizedDistricts(districtsJson?: string | null): { named: string[]; hasRawEntries: boolean } {
+  try {
+    const raw: unknown = JSON.parse(districtsJson || '[]');
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return { named: [], hasRawEntries: false };
+    }
+    const named = raw
+      .map((d) => normalizeCityKey(String(d)))
+      .filter((d) => Boolean(d) && !/^\d+$/.test(d));
+    return { named, hasRawEntries: true };
+  } catch {
+    return { named: [], hasRawEntries: false };
+  }
+}
+
+export function doesDistrictMatch(
+  adDistrict: string | undefined | null,
+  adTitle: string | undefined | null,
+  namedDistricts: string[]
+): boolean {
+  if (namedDistricts.length === 0) return true;
+  const distNorm = normalizeCityKey(adDistrict || '');
+  if (distNorm) {
+    return namedDistricts.some((d) => distNorm === d || distNorm.includes(d) || d.includes(distNorm));
+  }
+  const titleNorm = normalizeCityKey(adTitle || '');
+  return titleNorm ? namedDistricts.some((d) => titleNorm.includes(d)) : false;
+}
+
 function rejectMatch(reason: string, budgetDeviationPct = 0): MatchResult {
   return {
     eligible: false,
@@ -365,19 +394,22 @@ export function evaluateAdMatch(ad: ParsedDivarAd, rule: FilterRule): MatchResul
           (allowed) => adCityNorm === allowed || adCityNorm.includes(allowed) || allowed.includes(adCityNorm)
         );
         if (!matchesCity) {
-          return {
-            eligible: false,
-            score: 0,
-            budgetScore: 0,
-            areaScore: 0,
-            specsScore: 0,
-            budgetDeviationPct: 0,
-            areaDeviationPct: 0,
-            reasons: [`شهر آگهی (${ad.cityPersian}) با شهر انتخاب‌شده در فیلتر مطابقت ندارد`]
-          };
+          return rejectMatch(`شهر آگهی (${ad.cityPersian}) با شهر انتخاب‌شده در فیلتر مطابقت ندارد`);
         }
       }
     } catch {}
+  }
+
+  // ==========================================
+  // Check 0B: District Filter Enforcement (guards whole-city feeds such as Sheypoor)
+  // ==========================================
+  const districtFilter = parseNormalizedDistricts(rule.districts_json);
+  if (districtFilter.named.length > 0 && !doesDistrictMatch(ad.districtPersian, ad.title, districtFilter.named)) {
+    return rejectMatch(
+      ad.districtPersian
+        ? `محله آگهی (${ad.districtPersian}) با محله‌های انتخاب‌شده در فیلتر مطابقت ندارد`
+        : 'محله آگهی با محله‌های انتخاب‌شده در فیلتر مطابقت ندارد'
+    );
   }
 
   // ==========================================

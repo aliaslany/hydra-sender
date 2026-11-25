@@ -91,6 +91,28 @@ describe('Sheypoor Scraper', () => {
     expect(res.nextCursorDate).toBeNull();
   });
 
+  it('filters search blocks by named districts and skips whole-city Sheypoor when only numeric Divar district IDs exist', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { type: 'normal', id: '444', attributes: { title: 'آگهی فرهنگ', location: 'گلستان، علی آباد کتول، خیابان فرهنگ' } },
+          { type: 'normal', id: '555', attributes: { title: 'آگهی جنگل', location: 'گلستان، علی آباد کتول، جاده جنگل' } }
+        ],
+        meta: { normal_count: 2 }
+      })
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const namedDistRes = await searchSheypoorPostList({ ...mockRule, districts_json: '["فرهنگ"]' }, mockEnv, { page: 1 });
+    expect(namedDistRes.tokens).toEqual(['sp_444']);
+
+    fetchSpy.mockClear();
+    const numericDistRes = await searchSheypoorPostList({ ...mockRule, districts_json: '["841"]' }, mockEnv, { page: 1 });
+    expect(numericDistRes.tokens).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('extracts multi-word city/district, ندارد as false, سن بنا age, and breadcrumb property type', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

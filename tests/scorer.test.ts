@@ -177,4 +177,14 @@ describe('Scorer & Persian NLP Engine', () => {
     expect(aptNearShops.propertyCategory).toBe('APARTMENT');
     expect(evaluateAdMatch(aptNearShops, aptRule).eligible).toBe(true);
   });
+
+  it('enforces districts_json when named neighborhoods are configured', () => {
+    const rule = makeRule({ districts_json: '["خیابان فرهنگ", "مرکز شهر"]' });
+    const insideAd = makeAd({ districtPersian: 'خیابان فرهنگ' });
+    const outsideAd = makeAd({ districtPersian: 'کمربندی غربی', title: 'آپارتمان ۱۰۰ متری' });
+    expect(evaluateAdMatch(insideAd, rule).eligible).toBe(true);
+    const outRes = evaluateAdMatch(outsideAd, rule);
+    expect(outRes.eligible).toBe(false);
+    expect(outRes.reasons[0]).toContain('محله');
+  });
 });

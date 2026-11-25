@@ -1,5 +1,13 @@
 import { Env, FilterRule, ParsedDivarAd } from '../types';
-import { extractIntFromPersian, inferDealType, normalizePersianText, parseDescriptionNLP, parseExtendedAttributesNLP } from '../engine/scorer';
+import {
+  extractIntFromPersian,
+  inferDealType,
+  normalizeCityKey,
+  normalizePersianText,
+  parseDescriptionNLP,
+  parseExtendedAttributesNLP,
+  parseNormalizedDistricts
+} from '../engine/scorer';
 
 export const SHEYPOOR_HEADERS: Record<string, string> = {
   'Accept': 'application/vnd.api+json',
@@ -119,6 +127,10 @@ export async function searchSheypoorPostList(
   if (!citySlug) {
     return { tokens: [], nextCursorDate: null, searchUid: null };
   }
+  const districtFilter = parseNormalizedDistricts(rule.districts_json);
+  if (districtFilter.hasRawEntries && districtFilter.named.length === 0) {
+    return { tokens: [], nextCursorDate: null, searchUid: null };
+  }
   const page = pagination?.page || 1;
   const T = rule.tolerance_pct || 0.15;
 
@@ -159,6 +171,12 @@ export async function searchSheypoorPostList(
     if (block?.type !== 'normal') continue;
     const id = block?.id;
     if (id && block?.attributes) {
+      if (districtFilter.named.length > 0 && block.attributes.location) {
+        const blockLocNorm = normalizeCityKey(String(block.attributes.location));
+        if (blockLocNorm && !districtFilter.named.some((d) => blockLocNorm.includes(d))) {
+          continue;
+        }
+      }
       const token = `sp_${id}`;
       if (!tokens.includes(token)) {
         tokens.push(token);

@@ -184,4 +184,111 @@ describe('Scheduler Helpers & Orchestration', () => {
     expect(dedupQuery).toBeDefined();
     expect(dedupQuery!.sql).toContain("post_token LIKE 'sp_%'");
   });
+
+  it('retains error count and applies exponential backoff when only one source fails', async () => {
+    const syncStateUpdates: any[][] = [];
+
+    const mockDb = {
+      prepare(sql: string) {
+        let currentBinds: any[] = [];
+        const stmt: any = {
+          bind(...args: any[]) {
+            currentBinds = args;
+            return stmt;
+          },
+          async first() {
+            return null;
+          },
+          async all() {
+            if (sql.includes('FROM filter_rules r')) {
+              return {
+                results: [
+                  {
+                    id: 'rule_partial_err',
+                    channel_id: 'ch_1',
+                    owner_user_id: 1000000,
+                    name: 'Dual Source Rule',
+                    is_active: 1,
+                    city_ids_json: '["823"]',
+                    districts_json: '[]',
+                    deal_type: 'BUY',
+                    property_type: 'ALL_RESIDENTIAL',
+                    divar_category_slug: 'buy-residential',
+                    min_budget: 0,
+                    max_budget: 6_000_000_000,
+                    min_rent: 0,
+                    max_rent: 0,
+                    allow_rahn_conversion: 1,
+                    max_price_per_m2: 0,
+                    min_area: 75,
+                    max_area: 250,
+                    tolerance_pct: 0.15,
+                    min_match_score: 65,
+                    stage2_filters_json: '{}',
+                    exclude_agency: 1,
+                    max_post_age_hours: 24,
+                    source_divar: 1,
+                    source_sheypoor: 1,
+                    chat_id: '@aliabadmelk',
+                    channel_title: 'Aliabad Melk',
+                    phase: 'LIVE',
+                    backfill_target_count: 30,
+                    backfill_queued_count: 0,
+                    pagination_cursor_date: null,
+                    pagination_page: 1,
+                    sheypoor_page: 1,
+                    consecutive_errors: 1,
+                    searches_used_today: 0,
+                    total_ads_sent: 0,
+                    daily_ad_quota: 1000
+                  }
+                ]
+              };
+            }
+            return { results: [] };
+          },
+          async run() {
+            if (sql.includes('UPDATE sync_state')) {
+              syncStateUpdates.push(currentBinds);
+            }
+            return { success: true };
+          }
+        };
+        return stmt;
+      },
+      async batch(stmts: any[]) {
+        for (const s of stmts) {
+          if (typeof s.run === 'function') await s.run();
+        }
+        return [];
+      }
+    } as unknown as D1Database;
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('sheypoor.com')) {
+        return { ok: false, status: 503 };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          list_widgets: [],
+          pagination: { data: { last_post_date: null } }
+        })
+      };
+    }));
+
+    const beforeSec = Math.floor(Date.now() / 1000);
+    await runScheduledTick({
+      DB: mockDb,
+      BOT_TOKEN: 'test-token',
+      DEFAULT_TIMEZONE: 'Asia/Tehran'
+    } as unknown as Env);
+
+    expect(syncStateUpdates.length).toBe(1);
+    const binds = syncStateUpdates[0];
+    // [nextPhase, newQueuedTotal, cursor, divarPage, spPage, searchUid, watermark, polledAt, partialErrCount, lastErrorMsg, partialRetryAt, ruleId]
+    expect(binds[8]).toBe(2); // incremented consecutive_errors from 1 -> 2
+    expect(String(binds[9])).toContain('503');
+    expect(Number(binds[10])).toBeGreaterThanOrEqual(beforeSec + 115); // ~120s backoff for consecutive_errors=2
+  });
 });

@@ -9,6 +9,10 @@ const MAX_AUTO_PAUSE_ERRORS = 15;
 const DEDUP_WINDOW_SECONDS = 72 * 3600;
 const SKIPPED_RETENTION_SECONDS = 14 * 86400;
 
+export function computeBackoffSeconds(errCount: number): number {
+  return Math.min(3600, 60 * Math.pow(2, Math.min(Math.max(errCount, 1) - 1, 6)));
+}
+
 export interface TaggedCandidateToken {
   source: 'divar' | 'sheypoor';
   token: string;
@@ -570,6 +574,9 @@ export async function runScheduledTick(env: Env): Promise<void> {
         sheypoorHasMore: useSheypoor ? sheypoorHasMore : false
       });
       const nextPhase = isBackfill ? (shouldTransitionToLive ? 'LIVE' : 'BACKFILL') : 'LIVE';
+      const hasPartialErrors = sourceErrors.length > 0;
+      const partialErrCount = hasPartialErrors ? (Number(row.consecutive_errors) || 0) + 1 : 0;
+      const partialRetryAt = hasPartialErrors ? nowSec + computeBackoffSeconds(partialErrCount) : 0;
 
       batchStatements.push(
         env.DB.prepare(
@@ -582,9 +589,9 @@ export async function runScheduledTick(env: Env): Promise<void> {
                search_uid = ?,
                last_watermark_timestamp = ?,
                last_polled_at = ?,
-               consecutive_errors = 0,
+               consecutive_errors = ?,
                last_error_msg = ?,
-               next_retry_at = 0,
+               next_retry_at = ?,
                is_auto_paused = 0
            WHERE rule_id = ?`
         ).bind(
@@ -596,7 +603,9 @@ export async function runScheduledTick(env: Env): Promise<void> {
           nextPhase === 'LIVE' ? null : searchUid,
           nowSec,
           nowSec,
-          sourceErrors.length > 0 ? sourceErrors[0].slice(0, 250) : null,
+          partialErrCount,
+          hasPartialErrors ? sourceErrors[0].slice(0, 250) : null,
+          partialRetryAt,
           row.id
         )
       );
@@ -607,7 +616,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
     } catch (err: any) {
       const nextErrCount = (Number(row.consecutive_errors) || 0) + 1;
       const errMsg = String(err?.message || err || 'Unknown error').slice(0, 300);
-      const backoffSec = Math.min(3600, 60 * Math.pow(2, Math.min(nextErrCount - 1, 6)));
+      const backoffSec = computeBackoffSeconds(nextErrCount);
       const autoPause = nextErrCount >= MAX_AUTO_PAUSE_ERRORS ? 1 : 0;
 
       await env.DB.batch([
