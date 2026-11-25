@@ -1,5 +1,7 @@
 # Hydra Real Estate Platform — System Architecture
 
+> 🌐 **Website:** [hydra.startstar.ir](https://hydra.startstar.ir/) · 🖥 **Dashboard:** [Admin Panel](https://hydra-bot.a77aslani.workers.dev/admin/) · 💼 **Author LinkedIn:** [linkedin.com/in/aliaslanik](https://www.linkedin.com/in/aliaslanik) · 🇮🇷 [README فارسی](README.md)
+
 This document describes the high-level and detailed architecture of the **Hydra Real Estate Platform**, an edge-native, serverless Telegram bot and ingestion engine deployed on **Cloudflare Workers** with **Cloudflare D1 (Serverless SQLite)**.
 
 ---

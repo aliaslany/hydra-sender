@@ -608,3 +608,33 @@ code {
   max-width: 240px;
   word-break: break-word;
 }
+
+.admin-footer {
+  max-width: 1280px;
+  margin: 1.5rem auto 1.25rem;
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.admin-footer a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.admin-footer a:hover {
+  text-decoration: underline;
+}
+
+.admin-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}

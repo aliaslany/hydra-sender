@@ -1,265 +1,117 @@
-# Hydra Real Estate & Classifieds Multi-Messenger Platform 🏢🤖
+<div dir="rtl">
 
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Cloudflare D1](https://img.shields.io/badge/Cloudflare_D1-SQLite-blue?style=for-the-badge&logo=sqlite&logoColor=white)](https://developers.cloudflare.com/d1/)
-[![Telegram Bot API](https://img.shields.io/badge/Telegram_Bot_API-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![Tests Passing](https://img.shields.io/badge/Tests-24%20Passing-brightgreen?style=for-the-badge)](worker/test)
+# ربات هوشمند پایش آگهی‌های املاک هیدرا (Hydra Real Estate Bot) 🏠🤖
 
-A high-performance, edge-native Telegram platform and multi-messenger broadcaster for Iranian real estate classifieds (**Divar**, **Sheypoor**, **Ariamarz**, and **AmlakMall**).
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-Edge-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://hydra-bot.a77aslani.workers.dev/admin/)
+[![Cloudflare D1](https://img.shields.io/badge/Cloudflare_D1-SQLite-0284c7?style=for-the-badge&logo=sqlite&logoColor=white)](migrations/0001_init.sql)
+[![Vitest](https://img.shields.io/badge/Tests-26_Passing-10b981?style=for-the-badge)](tests)
+[![Website](https://img.shields.io/badge/Website-hydra.startstar.ir-0f766e?style=for-the-badge)](https://hydra.startstar.ir/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-aliaslanik-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/aliaslanik)
 
----
+🌐 **[وب‌سایت رسمی و دمو زنده](https://hydra.startstar.ir/)** · 📘 **[صفحه SEO و مستندات فنی](https://hydra.startstar.ir/seo.html)** · 🖥 **[پنل مدیریت وب (Dashboard)](https://hydra-bot.a77aslani.workers.dev/admin/)** · 🤖 **[@hydrasendertelBot](https://t.me/hydrasendertelBot)** · 📢 **[@aliabadmelk](https://t.me/aliabadmelk)** · 🌍 **[English README](README.en.md)**
 
-## 📑 Table of Contents
-
-- [Overview & Systems](#overview--systems)
-- [System Architecture](#system-architecture)
-- [Features & Capabilities](#features--capabilities)
-- [Requirements & Compliance Checklist](#requirements--compliance-checklist)
-- [Quick Start: Cloudflare Real Estate Bot (`worker/`)](#quick-start-cloudflare-real-estate-bot-worker)
-- [Admin Dashboard (`/admin/`)](#admin-dashboard-admin)
-- [Telegram Bot User Guide](#telegram-bot-user-guide)
-- [Testing & Quality Assurance](#testing--quality-assurance)
-- [Legacy Channel Broadcaster (GitHub Actions)](#legacy-channel-broadcaster-github-actions)
-- [Documentation Index](#documentation-index)
+> 📌 **جداسازی پروژه از نسخه قدیمی هیدرا سندر:**  
+> نسخه قدیمی اسکریپت پایتون ارسال چهارپیام‌رسانی (تلگرام، بله، روبیکا، ایتا) برای نگهداری تاریخچه در شاخه و تگ [`legacy-hydra-sender`](https://github.com/aliaslany/hydra-sender/tree/legacy-hydra-sender) بایگانی شده است و شاخه اصلی (`HydraSender`) به‌طور کامل به **ربات هوشمند پایش و ارسال آگهی‌های املاک روی کلودفلر ورکرز** اختصاص دارد.
 
 ---
 
-## 🌟 Overview & Systems
+## ✨ قابلیت‌های کلیدی
 
-This repository contains two independent, production-ready systems:
-
-1. **[NEW] Cloudflare Real Estate Agent Platform (`worker/`)**:
-   - **Edge Serverless Architecture**: Deployed on Cloudflare Workers and Cloudflare D1 (Serverless SQLite) — zero servers, 100% free tier compatible.
-   - **Multi-Portal Scraping**: Ingests real estate listings from **Divar** (API v8), **Sheypoor** (Schema.org JSON-LD), **Ariamarz** (Schema.org JSON-LD), and generic HTML sources.
-   - **Two-Stage Matching & Scoring Engine**: Capped 10–15% tolerance on budget and area, followed by multi-criteria weighted scoring on amenities and building specs.
-   - **Persian Card Views**: Delivers rich listing summaries with match badges (`🎯 ۸۸٪ تطابق`), price breakdowns (میلیارد / میلیون تومان), and direct portal links.
-   - **Subscription & Access Control**: Full quota and plan enforcement (Free/Trial/Paid) with a web-based Admin Dashboard (`/admin/`).
-
-2. **Legacy Channel Broadcaster (`root`)**:
-   - Runs on GitHub Actions cron schedules to broadcast new Divar ads into Telegram channels, Bale, Rubika, and Eitaa.
+* **پایش دو منبعی دیوار و شیپور (`Divar API v8` + `Sheypoor API v10`):**
+  * پشتیبانی از جستجوی چندشهری (`resolveSheypoorCitySlugs`) و جداسازی صفحه‌بندی هر منبع در فاز `BACKFILL` و `LIVE`.
+  * نوبت‌دهی متناوب و عادلانه (`interleaveSourceTokens`) برای جلوگیری از گرسنگی شیپور زیر سقف ساب‌ریکوئست کلودفلر (`42` ساب‌ریکوئست در هر کرون‌تیک).
+  * فیلتر کردن بلاک‌های تبلیغاتی بین‌شهری شیپور (پذیرش صرفاً `block.type === 'normal'`).
+* **موتور امتیازدهی دو مرحله‌ای و تشخیص معامله/کاربری ([`src/engine/scorer.ts`](src/engine/scorer.ts)):**
+  * تشخیص نوع معامله واقعی (`BUY` در برابر `RENT`) از ساختار دسته‌بندی و قیمت‌ها (`inferDealType`) و جلوگیری از ورود آگهی‌های اجاره یا تجاری در فیلترهای فروش مسکونی.
+  * تلورانس پویا تا **±۲۵٪** (پیش‌فرض ±۱۵٪) روی بودجه، متراژ و تبدیل استاندارد رهن و اجاره (`۳٪`).
+  * پردازش زبان طبیعی فارسی (NLP) با نرمال‌سازی حروف/اعداد، مرزهای یونیکد فارسی، درک عبارات نفی («بدون پارکینگ»، «انباری ندارد») و استخراج سن بنا، واحد در طبقه، سند، نما، جهت، اسکلت، کابینت، سرمایش و گرمایش.
+* **فیلترهای امنیتی و جغرافیایی پیشرفته:**
+  * حذف آگهی‌های مشاورین و دپارتمان‌های املاک (`businessType` + اسکن کلمات منفی).
+  * کنترل دقیق شهر، محله (`districts_json`) و محدوده چندضلعی نقشه (`Geo-Fence`) روی نقشه تعاملی Leaflet در داشبورد.
+  * اثر انگشت ساختاری دقیق (`computeAdFingerprint`) و حذف تکرار فقط بین دو منبع (`Divar <-> Sheypoor`) در پنجره ۷۲ ساعته.
+* **تحویل هوشمند تلگرام و پایداری عملیاتی:**
+  * ارسال آلبوم چندتصویری (`sendMediaGroup`) با زنجیره بازیابی خودکار (`sendPhoto` ← `sendMessage`) هنگام خطای مدیای CDN.
+  * برندینگ اختصاصی به ازای هر کانال (شماره موبایل، تلفن ثابت، آدرس دفتر و هشتگ‌ها).
+  * عقب‌نشینی نمایی (`next_retry_at`) برای خطاهای کامل و جزئی، توقف خودکار در خطاهای پیاپی و پاک‌سازی ساعتی لاگ‌ها.
+* **پنل مدیریت وب استاتیک ([`public/admin/`](public/admin/index.html)):**
+  * ارائه‌شده مستقیم از لبه کلودفلر با `[assets]`، تم تاریک/روشن با فونت وزیرمتن، نقشه رسم محدوده Polygon، فیلترهای مرحله دوم کامل، فید بی‌نهایت وضعیت ارسال، تب لاگ‌ها و شبیه‌ساز زنده امتیازدهی.
 
 ---
 
-## 🏛 System Architecture
-
-The new real estate platform is built around serverless edge computing and event-driven pipelines:
+## 🏛 معماری سامانه
 
 ```mermaid
 flowchart TD
-    subgraph Sources ["Classifieds Portals"]
-        D["Divar API v8"]
-        S["Sheypoor JSON-LD"]
-        A["Ariamarz JSON-LD"]
-        M["AmlakMall / HTML"]
-    end
-
-    subgraph Edge ["Cloudflare Workers Runtime"]
-        CronCrawl["Cron: Ingestion (*/5)"]
-        CronDrain["Cron: Outbox Drain (* *)"]
-        Webhook["Webhook: /telegram"]
-        AdminUI["Admin UI & API: /admin/"]
-
-        subgraph Core ["Pure Business Logic (src/core)"]
-            Norm["Normalization Engine"]
-            Match["2-Stage Matching & 10-15% Tolerance"]
-            Card["Card View Formatter"]
-            Access["Access Control & Plans"]
-        end
-
-        subgraph Storage ["Cloudflare D1 Database"]
-            DB[(SQLite Tables)]
-        end
-    end
-
-    subgraph Output ["User Channels"]
-        TG["Telegram Bot (@hydrasendertelBot)"]
-        AdminUser["Admin Dashboard"]
-    end
-
-    CronCrawl --> Sources
-    Sources --> Norm --> Match
-    DB <--> Match
-    Match -->|Matches >= 50%| DB
-    CronDrain --> DB --> TG
-    Webhook <--> TG
-    AdminUI <--> DB
-    AdminUser <--> AdminUI
+    D["دیوار (API v8)"] --> S["زمان‌بند کرون دقیقه‌ای<br/>src/cron/scheduler.ts"]
+    SP["شیپور (API v10)"] --> S
+    S --> I["نوبت‌دهی متناوب + بودجه ۴۲ ساب‌ریکوئست"]
+    I --> SC["موتور امتیازدهی، NLP، ضداملاک و Geo-Fence<br/>src/engine/scorer.ts"]
+    SC --> DD["حذف تکرار بین‌منبعی ۷۲ ساعته<br/>(Divar ↔ Sheypoor)"]
+    DD --> D1[("Cloudflare D1<br/>sent_ads / filter_rules / sync_state")]
+    D1 --> CB["کارت‌ساز آلبوم و فالبک تلگرام<br/>src/telegram/cardBuilder.ts"]
+    CB --> TG["کانال‌های تلگرام (@aliabadmelk)"]
+    UI["پنل مدیریت وب (/admin/)<br/>public/admin/"] <--> API["Admin REST API<br/>src/api/admin.ts"] <--> D1
+    WH["وب‌هوک ربات (@hydrasendertelBot)<br/>src/telegram/webhook.ts"] <--> D1
 ```
 
-For the comprehensive design document with sequence diagrams, subrequest budgeting, and class structures, see **[`ARCHITECTURE.md`](ARCHITECTURE.md)**.
-
 ---
 
-## ✨ Features & Capabilities
+## 🗂 ساختار مخزن
 
-### 1. Multi-Portal Crawling
-- **Divar**: Direct reverse-engineered client for `/v8/postlist/w/search` and `/v8/posts-v2/web/{token}` with full widget parsing.
-- **Sheypoor**: Extracts structured Schema.org `Offer` / `Apartment` / `Place` JSON-LD (`floorSize`, `numberOfRooms`, `amenityFeature` [Parking, Storage, Elevator], `additionalProperty` [Year, Price per m²]).
-- **Ariamarz**: Ingests Schema.org `SingleFamilyResidence` JSON-LD schemas.
-- **Generic HTML Crawler**: Extracted via `<dt>/<dd>`, two-span key-value pairs, table rows, and OpenGraph tags for sites like AmlakMall.
-
-### 2. Two-Stage Matching & Tolerance Engine
-- **Stage 1 (Hard Filters & Financials)**:
-  - Deal Type (`خرید و فروش` / `رهن و اجاره`)
-  - Property Type (`آپارتمان`, `ویلایی`, `کلنگی`, `تجاری`, `اداری`)
-  - Budget (Total price, price per m², deposit, rent)
-  - Area bounds (Minimum and maximum square meters)
-  - **10–15% Tolerance**: Metric values within the 10–15% margin receive quadratic score penalties; values beyond tolerance are discarded immediately.
-- **Stage 2 (Soft Criteria & Scoring)**:
-  - Key amenities: Parking (14%), Elevator (14%), Storage (12%), Balcony (10%).
-  - Building specifications: Age (10%), Structure (8%), Orientation (8%).
-  - Interior specifications: Cabinets (8%), Cooling/Heating (8%), Floor & Rooms (8%).
-  - Produces an exact percentage match (`0% – 100%`). Listings with score $\ge 50\%$ are notified.
-
-### 3. Persian Card View Output
-- Clean Telegram formatting with Persian typography and numerals.
-- Natural Persian currency units (e.g. `۷ میلیارد و ۵۰۰ میلیون تومان`).
-- Key specs inline summary (`متراژ: ۱۱۰ متر | خواب: ۲ | طبقه: ۳ از ۵`).
-- Direct portal deep links for instant viewing.
-
-### 4. Subscription & Access Management
-- **Plans**: Free / Trial (7 days, 1 search), Standard (30 days, 3 searches), Pro / Real Estate Agents (90 days, 10 searches), and Admin (unlimited).
-- **Web Admin Dashboard (`/admin/`)**:
-  - Grant or revoke user plans and search quotas.
-  - Block/unblock users.
-  - Live scraper testing utility (inspect raw Divar/Sheypoor URLs and extracted tags).
-  - Webhook registration and health status checks.
-
----
-
-## 📋 Requirements & Compliance Checklist
-
-All features requested for the Real Estate Telegram Bot have been implemented and verified. See **[`REQUIREMENTS.md`](REQUIREMENTS.md)** for the full requirement-by-requirement compliance matrix.
-
----
-
-## 🚀 Quick Start: Cloudflare Real Estate Bot (`worker/`)
-
-### Prerequisites
-- Node.js $\ge 20$ (Node 22 recommended)
-- A Cloudflare account (Free Plan is sufficient)
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
-
-### Deployment Steps
-
-1. **Clone the repository and enter `worker/`:**
-   ```bash
-   git clone https://github.com/aliaslany/hydra-sender.git
-   cd hydra-sender/worker
-   npm install --legacy-peer-deps
-   ```
-
-2. **Configure your Cloudflare credentials:**
-   ```bash
-   export CLOUDFLARE_API_TOKEN="your-api-token"
-   export CLOUDFLARE_ACCOUNT_ID="your-account-id"
-   ```
-
-3. **Configure D1 Database:**
-   Create a D1 database named `hydra` in your Cloudflare dashboard and copy its ID into `wrangler.jsonc`:
-   ```jsonc
-   "d1_databases": [
-     {
-       "binding": "DB",
-       "database_name": "hydra",
-       "database_id": "YOUR_D1_DATABASE_ID"
-     }
-   ]
-   ```
-   *(Note: The database tables automatically bootstrap upon the first request via `ensureSchema`)*
-
-4. **Set production secrets:**
-   ```bash
-   npx wrangler secret put BOT_TOKEN           # Telegram bot token
-   npx wrangler secret put WEBHOOK_SECRET      # Random secret string for webhook validation
-   npx wrangler secret put ADMIN_TOKEN         # Password for accessing /admin/
-   ```
-
-5. **Deploy to Cloudflare:**
-   ```bash
-   npm run deploy
-   ```
-
-6. **Register Telegram Webhook:**
-   Open `https://<your-worker>.workers.dev/admin/`, log in using your `ADMIN_TOKEN`, navigate to **اتصال‌ها** and click **ثبت وب‌هوک تلگرام**.
-
----
-
-## 🖥 Admin Dashboard (`/admin/`)
-
-The Cloudflare Worker hosts a built-in administrative single-page dashboard at `/admin/`:
-
-- **کاربران و اشتراک‌ها (Users & Subscriptions):** View all bot users, edit plan limits, grant trial/pro access, or block abusive accounts.
-- **تست و بررسی اتصال (Crawler Inspector):** Paste any Divar or Sheypoor URL to verify connectivity and see parsed labels in real-time.
-- **تنظیمات موتور (Engine Settings):** Modify default search cities, categories, tolerance ceilings, and subrequest crawl budgets without redeploying code.
-
----
-
-## 💬 Telegram Bot User Guide
-
-1. Start a conversation with the bot: **`/start`**
-2. The bot registers your profile and assigns the default trial subscription.
-3. Click **" ثبت جستجوی جدید"** to start the interactive filter wizard:
-   - Choose deal type (خرید / رهن و اجاره).
-   - Select property category (آپارتمان، ویلایی، اداری، تجاری).
-   - Input budget and area range.
-   - Choose required amenities (پارکینگ، آسانسور، انباری، بالکن).
-   - Specify preferences for building age, structure type, and interior finish.
-4. As new listings appear on Divar, Sheypoor, or Ariamarz, the bot evaluates them against your criteria and delivers immediate Card Views for matching properties.
-
----
-
-## 🧪 Testing & Quality Assurance
-
-The project contains 24 automated test suites covering normalization, parsing, matching tolerance, outbox delivery, subscription quotas, and real JSON-LD payloads.
-
-Run all tests locally:
-```bash
-cd worker
-npm test
-```
-
-Test output:
 ```text
-✔ admin API requires the token
-✔ plans, grant, block, user search
-✔ settings are validated and persisted
-✔ crawl -> match -> drain delivers once, only to matching and entitled users
-✔ wizard: /start grants default plan, steps through to a saved search
-✔ inside range scores 100
-✔ inside tolerance gets partial credit, beyond tolerance is excluded
-✔ tolerance is capped at 15%
-✔ unknown ad values are not counted against the ad
-✔ soft criteria lower the score but never exclude
-✔ parseNum handles Persian digits, separators and words
-✔ normalizeAd maps labels, flags and derives price per m2
-✔ card formatting
-✔ siteAd extracts real Sheypoor Schema.org Offer/Apartment JSON-LD correctly
-✔ siteAd extracts Ariamarz SingleFamilyResidence JSON-LD correctly
-ℹ tests 24 | pass 24 | fail 0
+├── index.html              # وب‌سایت معرفی تعاملی و دمو زنده (GitHub Pages: hydra.startstar.ir)
+├── seo.html                # صفحه تخصصی SEO و راهنمای معماری سامانه
+├── sitemap.xml / robots.txt
+├── assets/                 # استایل، اسکریپت شبیه‌ساز زنده و کاور برداری وب‌سایت
+├── migrations/
+│   ├── 0001_init.sql       # اسکیمای پایه جدول‌های D1
+│   └── 0002_improvements.sql
+├── public/admin/           # پنل مدیریت وب استاتیک (سرو مستقیم در /admin/)
+├── src/
+│   ├── index.ts            # مسیریابی Worker و بوت‌استرپ امن D1
+│   ├── types.ts            # تایپ‌های تایپ‌اسکریپت
+│   ├── api/admin.ts        # اندپوینت‌های مدیریت قوانین، کانال‌ها، اشتراک و شبیه‌ساز
+│   ├── cron/scheduler.ts   # کرون، صف ارسال، بودجه‌بندی، Backoff و پاک‌سازی
+│   ├── divar/scraper.ts    # کلاینت دیوار API v8
+│   ├── sheypoor/scraper.ts # کلاینت شیپور API v10
+│   ├── engine/             # امتیازدهی، NLP، ضداملاک و Geo-Fence
+│   └── telegram/           # کارت‌ساز آلبوم/متن و ویزارد وب‌هوک
+├── tests/                  # ۲۶ تست واحد Vitest (scorer, geo, cardBuilder, sheypoor, scheduler)
+└── .github/workflows/deploy.yml
 ```
 
 ---
 
-## 📡 Legacy Channel Broadcaster (GitHub Actions)
+## 🚀 راه‌اندازی، تست و استقرار
 
-The repository retains full backward compatibility for the legacy GitHub Actions multi-messenger broadcaster in the root directory (`main.py`).
+```bash
+# ۱. نصب وابستگی‌ها
+npm install
 
-- **Broadcasting Destinations**: Telegram channels, Bale, Rubika, and Eitaa.
-- **Workflow**: Runs on `.github/workflows/run-bot.yml`.
-- **Environment variables required**: `SEARCH_CITY_IDS`, `SEARCH_CATEGORY`, `BOT_TOKEN`, `BOT_CHATID`.
-- **State storage**: Persisted in `tokens.json`.
+# ۲. بررسی تایپ‌ها و اجرای ۲۶ تست خودکار
+npm run typecheck
+npm test
+
+# ۳. اعمال اسکیمای پایه در دیتابیس Cloudflare D1
+npx wrangler d1 execute hydra-db --remote --file=migrations/0001_init.sql
+
+# ۴. تنظیم متغیرهای محرمانه و استقرار روی Cloudflare Workers
+npx wrangler secret put BOT_TOKEN
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler secret put ADMIN_MASTER_TOKEN
+npx wrangler deploy
+```
+
+> 💡 برای استقرار خودکار در GitHub Actions، دو مقدار `CLOUDFLARE_API_TOKEN` و `CLOUDFLARE_ACCOUNT_ID` را در بخش **Settings → Secrets and variables → Actions** مخزن ثبت کنید.
 
 ---
 
-## 📚 Documentation Index
+## 👨‍💻 توسعه‌دهنده و ارتباط مستقیم
 
-- **[`ARCHITECTURE.md`](ARCHITECTURE.md)**: System design, sequence diagrams, tolerance math, D1 ERD, and Cloudflare subrequest budgeting.
-- **[`REQUIREMENTS.md`](REQUIREMENTS.md)**: Full compliance checklist for all real estate agent requirements.
-- **[`worker/README.md`](worker/README.md)**: Detailed Cloudflare Worker setup, reverse proxy forwarder guide, and crawler configuration.
+* **علی اصلانی (Ali Aslani)**
+* 💼 **لینکدین:** [linkedin.com/in/aliaslanik](https://www.linkedin.com/in/aliaslanik)
+* 💻 **گیت‌هاب:** [github.com/aliaslany/hydra-sender](https://github.com/aliaslany/hydra-sender)
+* 🌐 **وب‌سایت و دمو:** [hydra.startstar.ir](https://hydra.startstar.ir/)
+* 🖥 **پنل مدیریت:** [hydra-bot.a77aslani.workers.dev/admin/](https://hydra-bot.a77aslani.workers.dev/admin/)
 
----
-
-## 📄 License
-
-MIT / Original Upstream License.
+</div>

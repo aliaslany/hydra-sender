@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hydra.startstar.ir/sitemap.xml
+Host: https://hydra.startstar.ir

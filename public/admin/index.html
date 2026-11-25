@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>پنل مدیریت ربات املاک هیدرا | Hydra-Sender Admin</title>
+  <title>پنل مدیریت ربات املاک هیدرا | Hydra Real Estate Admin</title>
+  <meta name="description" content="داشبورد مدیریت ربات هوشمند پایش آگهی‌های املاک دیوار و شیپور روی Cloudflare Workers" />
+  <meta name="author" content="Ali Aslani - https://www.linkedin.com/in/aliaslanik" />
+  <meta name="robots" content="noindex, nofollow" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/admin/styles.css" />
@@ -13,6 +16,8 @@
   <header>
     <h1>🏢 پنل هوشمند ربات املاک هیدرا</h1>
     <div class="header-controls">
+      <a class="btn btn-outline btn-sm" href="https://hydra.startstar.ir/" target="_blank" rel="noopener noreferrer" title="وب‌سایت معرفی و امکانات">🌐 وب‌سایت</a>
+      <a class="btn btn-outline btn-sm" href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer" title="پروفایل لینکدین توسعه‌دهنده">💼 LinkedIn</a>
       <span id="api-connection-badge" class="badge badge-backfill">در انتظار اتصال...</span>
       <button class="btn btn-outline btn-sm" onclick="triggerCronTick()" title="اجرای فوری بررسی و ارسال آگهی‌ها">⚡ اجرای کرون‌تیک</button>
       <button class="btn btn-outline btn-sm" onclick="openAuthDialog()">🔑 تنظیمات اتصال و توکن</button>
@@ -364,6 +369,17 @@
   <main>
     <div id="main-content"></div>
   </main>
+
+  <footer class="admin-footer">
+    <span>هیدرا املاک (Real Estate Ads Bot) · توسعه‌یافته توسط <a href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer">علی اصلانی (LinkedIn)</a></span>
+    <div class="admin-footer-links">
+      <a href="https://hydra.startstar.ir/" target="_blank" rel="noopener noreferrer">🌐 وب‌سایت</a>
+      <a href="https://hydra.startstar.ir/seo.html" target="_blank" rel="noopener noreferrer">📘 صفحه SEO و مستندات</a>
+      <a href="https://t.me/hydrasendertelBot" target="_blank" rel="noopener noreferrer">🤖 ربات تلگرام</a>
+      <a href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer">💼 LinkedIn</a>
+      <a href="https://github.com/aliaslany/hydra-sender" target="_blank" rel="noopener noreferrer">💻 GitHub</a>
+    </div>
+  </footer>
 
   <div id="toast-region" aria-live="polite"></div>
 

@@ -390,16 +390,21 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
 
     await tgApi(env, 'sendMessage', {
       chat_id: chatId,
-      text: `🏠 <b>به ربات هوشمند پایش املاک دیوار (Hydra-Sender v2) خوش آمدید!</b>\n\n` +
+      text: `🏠 <b>به ربات هوشمند پایش املاک هیدرا (دیوار و شیپور) خوش آمدید!</b>\n\n` +
         `🔹 <b>قابلیت‌ها:</b>\n` +
-        `• فیلتر دو مرحله‌ای (بودجه، متراژ، اسکلت، جهت، کابینت، سرمایش/گرمایش)\n` +
-        `• اعمال تلورانس ۱۰٪ تا ۱۵٪ و محاسبه درصد تطابق (Match Score %)\n` +
-        `• ارسال آگهی‌های موجود (Backfill) و ادامه خودکار با آگهی‌های جدید (Live)\n\n` +
-        `📌 <b>برای اتصال کانال:</b>\nربات را در کانال خود ادمین کنید یا دستور زیر را بفرستید:\n<code>/addchannel @somechannel</code>`,
+        `• پایش هم‌زمان دیوار و شیپور با فیلتر دو مرحله‌ای (بودجه، متراژ، اسکلت، جهت، کابینت، سرمایش/گرمایش)\n` +
+        `• اعمال تلورانس تا ۲۵٪ و محاسبه درصد تطابق (Match Score %)\n` +
+        `• فیلتر ضداملاک، محدوده نقشه و ارسال آگهی‌های موجود (Backfill) + استریم لحظه‌ای (Live)\n\n` +
+        `📌 <b>برای اتصال کانال:</b>\nربات را در کانال خود ادمین کنید یا دستور زیر را بفرستید:\n<code>/addchannel @somechannel</code>\n\n` +
+        `🌐 وب‌سایت: https://hydra.startstar.ir\n💼 لینکدین توسعه‌دهنده: https://www.linkedin.com/in/aliaslanik`,
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🖥 باز کردن پنل مدیریت وب (Admin Dashboard)', url: 'https://hydra-bot.a77aslani.workers.dev/admin/' }]
+          [{ text: '🖥 باز کردن پنل مدیریت وب (Admin Dashboard)', url: 'https://hydra-bot.a77aslani.workers.dev/admin/' }],
+          [
+            { text: '🌐 وب‌سایت و معرفی', url: 'https://hydra.startstar.ir/' },
+            { text: '💼 لینکدین سازنده', url: 'https://www.linkedin.com/in/aliaslanik' }
+          ]
         ]
       }
     });

@@ -1,6 +1,8 @@
 # چک‌لیست، نیازمندی‌ها و ماتریس انطباق پروژه ربات املاک تلگرام
 ## Real Estate Telegram Bot Requirements & Compliance Matrix
 
+> 🌐 **وب‌سایت رسمی:** [hydra.startstar.ir](https://hydra.startstar.ir/) · 🖥 **پنل مدیریت:** [Admin Dashboard](https://hydra-bot.a77aslani.workers.dev/admin/) · 💼 **لینکدین سازنده:** [linkedin.com/in/aliaslanik](https://www.linkedin.com/in/aliaslanik)
+
 این سند تمامی نیازمندی‌های فنی، الگوریتمی و کاربری پروژه **ربات تلگرام هوشمند املاک (Hydra Real Estate Platform)** را بر اساس نیازمندی‌های اعلام‌شده تشریح و مستند می‌کند.
 
 ---

@@ -1,284 +1,485 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-theme="dark">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>هیدرا سندر | پخش هم‌زمان آگهی در تلگرام، بله، روبیکا و ایتا</title>
-<meta name="description" content="هیدرا سندر آگهی‌های شما را به‌طور خودکار و هم‌زمان در تلگرام، بله، روبیکا و ایتا منتشر می‌کند.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ربات هوشمند پایش املاک هیدرا | شکار خودکار آگهی‌های شخصی دیوار و شیپور در تلگرام</title>
+  <meta name="description" content="ربات هوشمند املاک هیدرا روی کلودفلر ورکرز، آگهی‌های خرید، فروش، رهن و اجاره را به‌صورت زنده از دیوار و شیپور پایش، تبلیغات مشاوران املاک را حذف، با NLP و محدوده نقشه امتیازدهی کرده و با آلبوم تصاویر به کانال تلگرام ارسال می‌کند." />
+  <meta name="keywords" content="ربات املاک تلگرام, شکار آگهی دیوار, ربات فایل یاب املاک, پایش دیوار و شیپور, حذف آگهی بنگاه, کارت ویو املاک, هیدرا املاک, Ali Aslani, کلودفلر املاک" />
+  <meta name="author" content="Ali Aslani (علی اصلانی) - https://www.linkedin.com/in/aliaslanik" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://hydra.startstar.ir/" />
+  <link rel="icon" href="assets/og-cover.svg" type="image/svg+xml" />
+
+  <!-- Open Graph & Social SEO -->
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="fa_IR" />
+  <meta property="og:site_name" content="هیدرا املاک | Hydra Real Estate Bot" />
+  <meta property="og:title" content="ربات هوشمند پایش املاک هیدرا | شکار آگهی شخصی دیوار و شیپور" />
+  <meta property="og:description" content="پایش لحظه‌ای دیوار و شیپور، فیلتر ضداملاک، Geo-Fence نقشه، امتیازدهی دو مرحله‌ای با تلورانس ±۱۵٪ و انتشار خودکار آلبوم در تلگرام روی لبه کلودفلر." />
+  <meta property="og:url" content="https://hydra.startstar.ir/" />
+  <meta property="og:image" content="https://hydra.startstar.ir/assets/og-cover.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ربات هوشمند املاک هیدرا | دیوار و شیپور" />
+  <meta name="twitter:description" content="شکار خودکار فایل‌های شخصی املاک با امتیازدهی NLP و داشبورد مدیریت کلودفلر." />
+
+  <!-- Schema.org Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://hydra.startstar.ir/#website",
+        "url": "https://hydra.startstar.ir/",
+        "name": "ربات هوشمند پایش املاک هیدرا",
+        "inLanguage": "fa-IR"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Hydra Real Estate Bot (ربات هوشمند املاک هیدرا)",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Cloudflare Workers / Telegram",
+        "url": "https://hydra.startstar.ir/",
+        "sameAs": [
+          "https://github.com/aliaslany/hydra-sender",
+          "https://www.linkedin.com/in/aliaslanik",
+          "https://t.me/hydrasendertelBot"
+        ],
+        "offers": {
+          "@type": "AggregateOffer",
+          "priceCurrency": "IRR",
+          "lowPrice": "0",
+          "highPrice": "18500000"
+        },
+        "creator": {
+          "@type": "Person",
+          "name": "Ali Aslani",
+          "url": "https://www.linkedin.com/in/aliaslanik",
+          "sameAs": [
+            "https://www.linkedin.com/in/aliaslanik",
+            "https://github.com/aliaslany"
+          ]
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "ربات املاک هیدرا چگونه آگهی‌های شخصی را از بنگاه‌های املاک جدا می‌کند؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "سامانه از دو لایه فیلتر استفاده می‌کند: وضعیت حساب کسب‌وکار/مشاور در API دیوار و پروفایل فروشگاهی شیپور، به‌علاوه اسکن دقیق کلمات کلیدی و عبارات املاکی در عنوان و توضیحات."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "آیا آگهی‌های هم‌زمان دیوار و شیپور تکرار می‌شوند؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "خیر. موتور اثر انگشت ساختاری در بازه ۷۲ ساعته آگهی‌های مشابه بین دیوار و شیپور را شناسایی و از ارسال تکراری در کانال جلوگیری می‌کند."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
+  <div class="aurora-bg" aria-hidden="true"></div>
+  <div class="grid-overlay" aria-hidden="true"></div>
 
-<div class="noise-layer" aria-hidden="true"></div>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a href="#top" class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 36 36" width="22" height="22">
+            <path d="M6 20 L18 8 L30 20 V30 H21 V22 H15 V30 H6 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" style="color:var(--primary)"/>
+            <circle cx="27" cy="9" r="3.2" fill="var(--gold)"/>
+          </svg>
+        </span>
+        <span>هیدرا املاک <small style="font-weight:500;color:var(--text-muted);font-size:0.75rem;">Real Estate AI Bot</small></span>
+      </a>
 
-<header class="site-header">
-  <div class="wrap header-inner">
-    <a href="#top" class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" width="34" height="34">
-          <circle cx="24" cy="24" r="5.5" fill="var(--saffron)"/>
-          <g stroke="var(--turquoise)" stroke-width="2.4" fill="none" stroke-linecap="round">
-            <path d="M24 24 L24 8"/>
-            <path d="M24 24 L38 15"/>
-            <path d="M24 24 L38 33"/>
-            <path d="M24 24 L10 33"/>
-          </g>
-          <g fill="var(--cream)">
-            <circle cx="24" cy="6" r="3.4"/>
-            <circle cx="40" cy="13.5" r="3.4"/>
-            <circle cx="40" cy="34.5" r="3.4"/>
-            <circle cx="8" cy="34.5" r="3.4"/>
-          </g>
-        </svg>
-      </span>
-      <span class="brand-name">هیدرا سندر</span>
-    </a>
-    <nav class="main-nav">
-      <a href="#how">روند کار</a>
-      <a href="#platforms">پلتفرم‌ها</a>
-      <a href="#plans">پلن‌ها</a>
-    </nav>
-    <button class="btn btn-primary btn-small" id="openWizardTop">شروع ثبت‌نام</button>
-  </div>
-</header>
+      <nav class="main-nav" aria-label="منوی اصلی">
+        <a href="#live-sim">شبیه‌ساز زنده</a>
+        <a href="#features">امکانات موتور</a>
+        <a href="#plans">تعرفه‌ها</a>
+        <a href="seo.html">راهنمای SEO و معماری</a>
+        <a href="#faq">سوالات متداول</a>
+      </nav>
 
-<main id="top">
-
-  <!-- HERO -->
-  <section class="hero">
-    <div class="wrap hero-inner">
-      <div class="hero-copy">
-        <p class="eyebrow">برای مدیران کانال‌های آگهی و املاک</p>
-        <h1>یک آگهی،<br><span class="accent">هم‌زمان در چهار پیام‌رسان</span></h1>
-        <p class="hero-sub">
-          هیدرا سندر آگهی‌های ملکی و کالای شما را یک‌بار دریافت می‌کند و بدون کپی و پیست دستی، به‌طور خودکار در تلگرام، بله، روبیکا و ایتا منتشر می‌کند.
-        </p>
-        <div class="hero-cta">
-          <button class="btn btn-primary" id="openWizardHero">شروع رایگان</button>
-          <a href="#plans" class="btn btn-ghost">مشاهده پلن‌ها</a>
-        </div>
-        <p class="hero-note">بدون نیاز به دانش فنی · فعال‌سازی در همان روز</p>
-      </div>
-
-      <div class="hero-visual" aria-hidden="true">
-        <svg viewBox="0 0 480 420" class="broadcast-svg">
-          <g class="pulse-rings">
-            <circle cx="240" cy="210" r="46" class="ring r1"/>
-            <circle cx="240" cy="210" r="46" class="ring r2"/>
-          </g>
-          <line x1="240" y1="210" x2="240" y2="60" class="branch"/>
-          <line x1="240" y1="210" x2="382" y2="140" class="branch"/>
-          <line x1="240" y1="210" x2="382" y2="290" class="branch"/>
-          <line x1="240" y1="210" x2="98" y2="290" class="branch"/>
-
-          <g class="node listing-node">
-            <rect x="190" y="182" width="100" height="56" rx="14"/>
-            <text x="240" y="207" text-anchor="middle" class="node-title">آگهی شما</text>
-            <text x="240" y="226" text-anchor="middle" class="node-sub">یک بار ارسال</text>
-          </g>
-
-          <g class="node platform-node">
-            <circle cx="240" cy="52" r="30"/>
-            <text x="240" y="58" text-anchor="middle">تلگرام</text>
-          </g>
-          <g class="node platform-node">
-            <circle cx="390" cy="140" r="30"/>
-            <text x="390" y="146" text-anchor="middle">بله</text>
-          </g>
-          <g class="node platform-node">
-            <circle cx="390" cy="290" r="30"/>
-            <text x="390" y="296" text-anchor="middle">روبیکا</text>
-          </g>
-          <g class="node platform-node">
-            <circle cx="90" cy="290" r="30"/>
-            <text x="90" y="296" text-anchor="middle">ایتا</text>
-          </g>
-        </svg>
+      <div class="header-actions">
+        <a class="btn btn-linkedin btn-sm" href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a class="btn btn-ghost btn-sm" href="https://hydra-bot.a77aslani.workers.dev/admin/" target="_blank" rel="noopener noreferrer">🖥 داشبورد مدیریت</a>
+        <button class="btn btn-primary btn-sm open-wizard">شروع با ربات</button>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="تغییر تم تاریک و روشن">☀️</button>
       </div>
     </div>
-  </section>
+  </header>
 
-  <!-- HOW IT WORKS -->
-  <section class="how" id="how">
-    <div class="wrap">
-      <h2>روند کار در سه گام</h2>
-      <div class="steps">
-        <div class="step">
-          <span class="step-num">۰۱</span>
-          <h3>کانال خود را وصل کنید</h3>
-          <p>ادمین‌شیپ کانال تلگرام و آی‌دی حساب‌های بله، روبیکا و ایتا را به هیدرا سندر متصل می‌کنید.</p>
+  <main id="top">
+    <!-- HERO + LIVE TELEMETRY -->
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <span class="pill"><span class="live-dot"></span> پایش زنده روی Cloudflare Edge · کرون هر ۶۰ ثانیه</span>
+          <h1>
+            فایل‌های شخصی <span class="gradient-text">دیوار و شیپور</span><br/>
+            فوری و امتیازدهی‌شده در تلگرام شما
+          </h1>
+          <p class="hero-sub">
+            دیگر نیازی به رفرش کردن مداوم دیوار و شیپور نیست. موتور هوشمند هیدرا آگهی‌های جدید را از دو پلتفرم پایش می‌کند، تبلیغات بنگاهی را حذف می‌کند، مشخصات فنی را با NLP فارسی استخراج کرده و با کارت ویو و آلبوم تصاویر به کانال تلگرام شما می‌فرستد.
+          </p>
+
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="https://t.me/hydrasendertelBot" target="_blank" rel="noopener noreferrer">🤖 فعال‌سازی در @hydrasendertelBot</a>
+            <a class="btn btn-ghost" href="https://hydra-bot.a77aslani.workers.dev/admin/" target="_blank" rel="noopener noreferrer">🖥 باز کردن پنل مدیریت</a>
+            <a class="btn btn-ghost" href="https://t.me/aliabadmelk" target="_blank" rel="noopener noreferrer">📢 کانال نمونه @aliabadmelk</a>
+          </div>
+
+          <div class="hero-stats">
+            <div class="stat-box">
+              <span class="stat-val">۲ منبع زنده</span>
+              <span class="stat-lbl">دیوار API v8 + شیپور v10</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val">امتیاز ±۱۵٪</span>
+              <span class="stat-lbl">تلورانس هوشمند + تطابق ۲ مرحله‌ای</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val">۷۲ ساعت</span>
+              <span class="stat-lbl">ضدتکرار بین‌منبعی و ضداملاک</span>
+            </div>
+          </div>
         </div>
-        <div class="step">
-          <span class="step-num">۰۲</span>
-          <h3>آگهی را ارسال کنید</h3>
-          <p>متن و تصویر آگهی را فقط یک‌بار برای ربات ارسال می‌کنید — دیگر نیازی به کپی در چهار اپلیکیشن نیست.</p>
+
+        <!-- Animated Telemetry Showcase -->
+        <aside class="telemetry-card" aria-label="پیش‌نمایش جریان زنده پردازش آگهی">
+          <div class="telemetry-head">
+            <strong>📡 جریان زنده خط لوله هیدرا</strong>
+            <div class="source-badges">
+              <span class="badge badge-divar">Divar</span>
+              <span class="badge badge-sheypoor">Sheypoor</span>
+              <span class="badge badge-ok">LIVE</span>
+            </div>
+          </div>
+          <div class="feed-stream">
+            <div class="feed-item active">
+              <div>
+                <strong>واحد ۱۱۵ متری · علی‌آباد کتول</strong>
+                <div class="feed-meta">اسکلت بتنی · کابینت های‌گلاس · پارکینگ ✅</div>
+              </div>
+              <span class="badge badge-ok">۹۸٪ تایید</span>
+            </div>
+            <div class="feed-item">
+              <div>
+                <strong>خانه ویلایی ۱۴۰ متری · خیابان فرهنگ</strong>
+                <div class="feed-meta">شیپور · سند تک‌برگ · بررسی تاریخچه قیمت</div>
+              </div>
+              <span class="badge badge-sheypoor">۹۴٪ ارسال</span>
+            </div>
+            <div class="feed-item">
+              <div>
+                <strong>فروش فوری مغازه یا آگهی مشاور املاک</strong>
+                <div class="feed-meta">شناسایی برچسب کارگزاری / نوع ملک غیرمسکونی</div>
+              </div>
+              <span class="badge badge-divar">حذف خودکار</span>
+            </div>
+            <div class="feed-item">
+              <div>
+                <strong>پست هم‌زمان در دیوار و شیپور</strong>
+                <div class="feed-meta">تطابق اثر انگشت (قیمت/متراژ/سال ساخت)</div>
+              </div>
+              <span class="badge badge-gold">جلوگیری از تکرار</span>
+            </div>
+          </div>
+          <div style="margin-top:0.95rem;display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--text-muted);flex-wrap:wrap;gap:0.5rem;">
+            <span>ذخیره‌سازی در Cloudflare D1 SQLite</span>
+            <a href="seo.html" style="color:var(--primary);font-weight:700;">معماری کامل سیستم ←</a>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE SIMULATOR -->
+    <section class="section" id="live-sim">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>🧪 شبیه‌ساز زنده فیلتر و کارت ویو تلگرام</h2>
+          <p>تنظیمات بودجه، تلورانس و فیلتر ضداملاک را تغییر دهید و خروجی واقعی کارت تلگرام و درصد تطابق موتور امتیازدهی را همین‌جا آزمایش کنید.</p>
         </div>
-        <div class="step">
-          <span class="step-num">۰۳</span>
-          <h3>هم‌زمان منتشر می‌شود</h3>
-          <p>هیدرا سندر آگهی را در همان لحظه در تمام پلتفرم‌های متصل‌شده منتشر می‌کند.</p>
+
+        <div class="sim-grid">
+          <div class="panel">
+            <div class="control-row">
+              <label>نوع معامله (Deal Type):</label>
+              <div class="chip-group" id="simDealGroup">
+                <button type="button" class="chip selected" data-deal="BUY">خرید و فروش</button>
+                <button type="button" class="chip" data-deal="RENT">رهن و اجاره</button>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label>آگهی آزمایشی (منبع):</label>
+              <div class="chip-group" id="simSourceGroup">
+                <button type="button" class="chip selected" data-source="divar">🟢 آگهی شخصی دیوار</button>
+                <button type="button" class="chip" data-source="sheypoor">🔵 آگهی شخصی شیپور</button>
+                <button type="button" class="chip" data-source="agency">🟠 آگهی مشاور املاک</button>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label><span>سقف بودجه فیلتر:</span><strong id="simBudgetVal">۵.۰۰ میلیارد تومان</strong></label>
+              <input type="range" id="simBudget" min="2000000000" max="9000000000" step="100000000" value="5000000000" />
+            </div>
+
+            <div class="control-row">
+              <label><span>حاشیه تلورانس (Tolerance):</span><strong id="simTolVal">±۱۵٪</strong></label>
+              <input type="range" id="simTol" min="0" max="25" step="5" value="15" />
+            </div>
+
+            <div class="control-row" style="margin-bottom:0;">
+              <label style="justify-content:flex-start;gap:0.6rem;cursor:pointer;">
+                <input type="checkbox" id="simAntiAgency" checked />
+                <span>فیلتر هوشمند حذف آگهی‌های مشاوران و بنگاه‌های املاک</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="tg-card" aria-live="polite">
+            <div class="tg-album-bar">
+              <span class="badge badge-divar" id="cardSourceBadge">دیوار (Divar)</span>
+              <span class="badge badge-ok" id="cardScoreBadge">🎯 ۹۸٪ تطابق</span>
+            </div>
+            <div class="tg-body">
+              <h3 class="tg-title" id="cardTitle">آپارتمان ۱۱۵ متری ۲ خواب کلید نخورده</h3>
+              <p id="cardCity" style="margin:0 0 0.7rem;color:var(--text-muted);font-size:0.82rem;">📍 علی‌آباد کتول</p>
+              <div class="tg-specs">
+                <div class="tg-spec"><strong>💰 قیمت:</strong> <span id="cardPrice">-</span></div>
+                <div class="tg-spec"><strong>📐 مشخصات:</strong> <span id="cardArea">-</span></div>
+              </div>
+              <div class="tg-specs" id="cardSpecs"></div>
+              <p id="cardDecisionNote" style="margin:0.75rem 0 0;font-size:0.8rem;color:var(--primary);font-weight:600;"></p>
+              <div class="tg-buttons">
+                <a class="tg-btn" href="https://t.me/aliabadmelk" target="_blank" rel="noopener noreferrer">📢 نمونه زنده در @aliabadmelk</a>
+                <a class="tg-btn" href="https://hydra-bot.a77aslani.workers.dev/admin/" target="_blank" rel="noopener noreferrer">🧪 شبیه‌ساز واقعی در داشبورد</a>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- PLATFORMS -->
-  <section class="platforms" id="platforms">
-    <div class="wrap">
-      <h2>در چهار پیام‌رسان پرکاربرد ایران</h2>
-      <p class="section-sub">مخاطبان شما همه‌جا پخش هستند؛ آگهی شما هم باید همه‌جا باشد.</p>
-      <div class="platform-grid">
-        <div class="platform-card">
-          <span class="platform-dot" style="background:#2CA6A4"></span>
-          <h3>تلگرام</h3>
-          <p>انتشار در کانال و گروه‌های تلگرامی شما.</p>
+    <!-- CORE FEATURES -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>امکانات کلیدی نسخه جدید ربات املاک هیدرا</h2>
+          <p>معماری یکپارچه TypeScript بدون نیاز به سرور VPS — بهینه برای مصرف رایگان لبه کلودفلر و دیتابیس D1.</p>
         </div>
-        <div class="platform-card">
-          <span class="platform-dot" style="background:#E3A008"></span>
-          <h3>بله</h3>
-          <p>پوشش مخاطبان داخلی که از بله استفاده می‌کنند.</p>
-        </div>
-        <div class="platform-card">
-          <span class="platform-dot" style="background:#0B3D3D"></span>
-          <h3>روبیکا</h3>
-          <p>انتشار هم‌زمان در کانال روبیکای شما.</p>
-        </div>
-        <div class="platform-card">
-          <span class="platform-dot" style="background:#B85C38"></span>
-          <h3>ایتا</h3>
-          <p>دسترسی به مخاطبان فعال در ایتا.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- PLANS -->
-  <section class="plans" id="plans">
-    <div class="wrap">
-      <h2>پلن‌ها</h2>
-      <p class="section-sub">پرداخت به‌صورت کارت‌به‌کارت و تایید توسط ادمین.</p>
-      <div class="plan-grid">
-        <div class="plan-card">
-          <h3>دوره آزمایشی</h3>
-          <p class="plan-price">رایگان<span>/ ۳ روز</span></p>
-          <ul>
-            <li>انتشار محدود آگهی</li>
-            <li>یک پلتفرم متصل</li>
-            <li>بدون نیاز به کارت</li>
-          </ul>
-          <button class="btn btn-ghost btn-block open-wizard">شروع رایگان</button>
-        </div>
-        <div class="plan-card featured">
-          <span class="plan-badge">پرمخاطب‌ترین</span>
-          <h3>ماهانه</h3>
-          <p class="plan-price">۱۹۹,۰۰۰<span>تومان / ماه</span></p>
-          <ul>
-            <li>انتشار نامحدود آگهی</li>
-            <li>هر چهار پلتفرم</li>
-            <li>پشتیبانی اولویت‌دار</li>
-          </ul>
-          <button class="btn btn-primary btn-block open-wizard">انتخاب پلن ماهانه</button>
-        </div>
-        <div class="plan-card">
-          <h3>روزانه</h3>
-          <p class="plan-price">۱۹,۰۰۰<span>تومان / روز</span></p>
-          <ul>
-            <li>انتشار نامحدود آگهی</li>
-            <li>هر چهار پلتفرم</li>
-            <li>مناسب تست کوتاه‌مدت</li>
-          </ul>
-          <button class="btn btn-ghost btn-block open-wizard">انتخاب پلن روزانه</button>
+        <div class="cards-grid">
+          <article class="feature-card">
+            <span class="feature-icon">📡</span>
+            <h3>پایش دو منبعی با Interleaving عادلانه</h3>
+            <p>دریافت هم‌زمان از دیوار و شیپور برای یک یا چند شهر با نوبت‌دهی عادلانه و جداسازی صفحه‌بندی Backfill هر منبع.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">🛡</span>
+            <h3>ضداملاک و تفکیک معامله و کاربری</h3>
+            <p>تشخیص نوع معامله واقعی (خرید vs رهن و اجاره) و کاربری (مسکونی/ویلایی vs تجاری/مغازه) حتی در فید عمومی شیپور.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">🧠</span>
+            <h3>پردازش زبان طبیعی فارسی (NLP)</h3>
+            <p>استخراج سن بنا، واحد در طبقه، سند، جهت ساختمان، نوع اسکلت، کابینت، سرمایش/گرمایش و درک کامل عبارات نفی مثل «ندارد».</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">🗺</span>
+            <h3>محدوده چندضلعی نقشه و فیلتر محله</h3>
+            <p>رسم محدوده دلخواه روی نقشه Leaflet داخل داشبورد و کنترل دقیق محله‌های مجاز در دیوار و شیپور.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">🖼</span>
+            <h3>آلبوم عکس + زنجیره Fallback</h3>
+            <p>ارسال تا ۱۰ تصویر به‌صورت آلبوم با لینک‌های تعاملی، و بازگشت خودکار به تک‌عکس یا متن در خطاهای CDN تلگرام.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">⚖️</span>
+            <h3>حذف تکرار و Backoff هوشمند</h3>
+            <p>اثر انگشت ساختاری بین دیوار و شیپور برای جلوگیری از ارسال تکراری و عقب‌نشینی نمایی روی خطاهای موقت هر منبع.</p>
+          </article>
         </div>
       </div>
-      <p class="price-note">* قیمت‌ها نمونه هستند — قبل از انتشار در فایل style.css / index.html جایگزین کنید.</p>
-    </div>
-  </section>
+    </section>
 
-  <!-- FINAL CTA -->
-  <section class="final-cta">
-    <div class="wrap">
-      <h2>آماده‌اید آگهی‌هایتان را هم‌زمان همه‌جا منتشر کنید؟</h2>
-      <button class="btn btn-primary btn-large open-wizard">شروع ثبت‌نام</button>
-    </div>
-  </section>
+    <!-- REAL PLANS MATCHING D1 -->
+    <section class="section" id="plans">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>پلن‌های اشتراک و سهمیه روزانه</h2>
+          <p>تعرفه‌های همگام با جدول <code>plans</code> در دیتابیس D1 سامانه؛ فعال‌سازی سریع از طریق ربات یا پنل مدیریت.</p>
+        </div>
+        <div class="plan-grid">
+          <div class="plan-card">
+            <div>
+              <h3>تست رایگان</h3>
+              <p class="plan-price">۰ تومان <span>/ ۳ روز</span></p>
+              <ul class="plan-list">
+                <li>تا ۱۵ آگهی روزانه</li>
+                <li>۱ کانال تلگرام و ۱ فیلتر فعال</li>
+                <li>شروع با Backfill تا ۱۰ آگهی</li>
+                <li>دسترسی به فیلتر ۲ مرحله‌ای و NLP</li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-ghost btn-block open-wizard" data-plan="FREE_TRIAL">شروع تست رایگان</button>
+          </div>
 
-</main>
+          <div class="plan-card">
+            <div>
+              <h3>پایه ماهانه (شخصی)</h3>
+              <p class="plan-price">۲۹۰,۰۰۰ <span>تومان / ماه</span></p>
+              <ul class="plan-list">
+                <li>تا ۵۰ آگهی روزانه</li>
+                <li>۱ کانال و ۲ فیلتر هوشمند هم‌زمان</li>
+                <li>پایش دیوار و شیپور + ضدتکرار</li>
+                <li>Backfill تا ۲۰ آگهی موجود</li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-ghost btn-block open-wizard" data-plan="BASIC_MONTH">انتخاب پلن پایه</button>
+          </div>
 
-<footer class="site-footer">
-  <div class="wrap footer-inner">
-    <span>هیدرا سندر</span>
-    <span class="footer-sep">·</span>
-    <a href="https://github.com/aliaslany" target="_blank" rel="noopener">GitHub</a>
-  </div>
-</footer>
+          <div class="plan-card featured">
+            <span class="plan-badge">پرفروش مشاوران</span>
+            <div>
+              <h3>حرفه‌ای مشاورین املاک</h3>
+              <p class="plan-price">۶۹۰,۰۰۰ <span>تومان / ماه</span></p>
+              <ul class="plan-list">
+                <li>تا ۲۰۰ آگهی روزانه</li>
+                <li>۳ کانال و ۶ فیلتر فعال</li>
+                <li>فیلتر نقشه Geo-Fence + برندینگ کانال</li>
+                <li>Backfill تا ۴۰ آگهی موجود</li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-primary btn-block open-wizard" data-plan="PRO_MONTH">فعال‌سازی پلن حرفه‌ای</button>
+          </div>
 
-<!-- WIZARD MODAL -->
-<div class="wizard-overlay" id="wizardOverlay">
-  <div class="wizard-modal" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
-    <button class="wizard-close" id="wizardClose" aria-label="بستن">×</button>
-
-    <div class="wizard-progress">
-      <span class="wp-dot active" data-step="1"></span>
-      <span class="wp-dot" data-step="2"></span>
-      <span class="wp-dot" data-step="3"></span>
-    </div>
-
-    <!-- Step 1 -->
-    <div class="wizard-step active" data-step="1">
-      <h3 id="wizardTitle">پلتفرم‌های مورد نیاز خود را انتخاب کنید</h3>
-      <div class="check-grid">
-        <label class="check-card"><input type="checkbox" value="تلگرام" checked><span>تلگرام</span></label>
-        <label class="check-card"><input type="checkbox" value="بله"><span>بله</span></label>
-        <label class="check-card"><input type="checkbox" value="روبیکا"><span>روبیکا</span></label>
-        <label class="check-card"><input type="checkbox" value="ایتا"><span>ایتا</span></label>
+          <div class="plan-card">
+            <div>
+              <h3>ویژه آژانس‌های املاک</h3>
+              <p class="plan-price">۱,۸۵۰,۰۰۰ <span>تومان / ۹۰ روز</span></p>
+              <ul class="plan-list">
+                <li>تا ۱,۰۰۰ آگهی روزانه</li>
+                <li>۱۰ کانال و ۲۵ فیلتر فعال</li>
+                <li>امکان چند شهر + سفارشی‌سازی فوتر</li>
+                <li>Backfill تا ۱۰۰ آگهی و پشتیبانی VIP</li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-ghost btn-block open-wizard" data-plan="AGENCY_VIP">سفارش پلن آژانس VIP</button>
+          </div>
+        </div>
       </div>
-      <div class="wizard-actions">
-        <button class="btn btn-primary wizard-next">ادامه</button>
+    </section>
+
+    <!-- CREATOR / LINKEDIN SPOTLIGHT -->
+    <section class="section" style="padding-top:1.5rem;">
+      <div class="wrap">
+        <div class="creator-card">
+          <div>
+            <span class="pill">👨‍💻 توسعه و معماری سیستم</span>
+            <h2 style="margin:0.55rem 0 0.35rem;font-size:1.35rem;">طراحی و توسعه توسط علی اصلانی (Ali Aslani)</h2>
+            <p style="margin:0;color:var(--text-secondary);max-width:650px;font-size:0.92rem;">
+              برای مشاوره راه‌اندازی اختصاصی، اتصال دامین/پروکسی، توسعه بات‌های تلگرام، هوش مصنوعی و اتوماسیون داده‌های املاک از طریق لینکدین یا گیت‌هاب در ارتباط باشید.
+            </p>
+          </div>
+          <div style="display:flex;gap:0.65rem;flex-wrap:wrap;">
+            <a class="btn btn-linkedin" href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer">💼 ارتباط در لینکدین (aliaslanik)</a>
+            <a class="btn btn-ghost" href="https://github.com/aliaslany/hydra-sender" target="_blank" rel="noopener noreferrer">💻 سورس‌کد در GitHub</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>سوالات متداول و نکات فنی</h2>
+          <p>پاسخ سریع به پرسش‌های رایج مدیران کانال‌ها و دفاتر املاک درباره <a href="seo.html" style="color:var(--primary);text-decoration:underline;">عملکرد و SEO سامانه</a>.</p>
+        </div>
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary>هیدرا سندر قدیمی چه شد و تفاوت این پروژه چیست؟</summary>
+            <p>اسکریپت قدیمی ارسال چهارپیام‌رسانی پایتون برای شفافیت معماری در شاخه <code>legacy-hydra-sender</code> بایگانی شد و مخزن اصلی به‌طور کامل به <strong>ربات هوشمند پایش آگهی املاک</strong> روی Cloudflare Workers، D1 و تلگرام اختصاص یافته است.</p>
+          </details>
+          <details class="faq-item">
+            <summary>چطور پنل مدیریت وب (Dashboard) را باز کنم؟</summary>
+            <p>نسخه زنده داشبورد مدیریت روی ورکر کلودفلر به آدرس <a href="https://hydra-bot.a77aslani.workers.dev/admin/" target="_blank" rel="noopener noreferrer" style="color:var(--primary)">hydra-bot.a77aslani.workers.dev/admin</a> در دسترس است و پس از وارد کردن توکن ادمین می‌توانید فیلترها، کانال‌ها و شبیه‌ساز را مدیریت کنید.</p>
+          </details>
+          <details class="faq-item">
+            <summary>چرا ربات آگهی‌های بنگاه‌های املاک را به اشتباه نمی‌فرستد؟</summary>
+            <p>علاوه بر فیلتر کسب‌وکار سمت دیوار و پروفایل مشاور در شیپور، موتور امتیازدهی تمام عنوان و توضیحات را با فهرست کلمات منفی املاک اسکن کرده و در صورت تشخیص، آگهی را رد می‌کند.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div>
+        <strong>هیدرا املاک (Hydra Real Estate Bot)</strong> · ساخته‌شده توسط <a href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700;">علی اصلانی</a>
+      </div>
+      <div class="footer-links">
+        <a href="seo.html">صفحه SEO و راهنما</a>
+        <a href="https://hydra-bot.a77aslani.workers.dev/admin/" target="_blank" rel="noopener noreferrer">داشبورد مدیریت</a>
+        <a href="https://t.me/hydrasendertelBot" target="_blank" rel="noopener noreferrer">ربات تلگرام</a>
+        <a href="https://t.me/aliabadmelk" target="_blank" rel="noopener noreferrer">کانال نمونه</a>
+        <a href="https://www.linkedin.com/in/aliaslanik" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a href="https://github.com/aliaslany/hydra-sender" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
     </div>
+  </footer>
 
-    <!-- Step 2 -->
-    <div class="wizard-step" data-step="2">
-      <h3>اطلاعات کانال شما</h3>
+  <!-- Onboarding Wizard Modal -->
+  <div class="wizard-overlay" id="wizardOverlay">
+    <div class="wizard-modal" role="dialog" aria-modal="true" aria-labelledby="wizModalTitle">
+      <button class="wizard-close" id="wizardClose" type="button" aria-label="بستن">×</button>
+      <h3 id="wizModalTitle" style="margin-top:0;">🚀 شروع سریع ربات املاک هیدرا</h3>
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin-top:0;">مشخصات اولیه را انتخاب کنید تا مستقیم به ربات <code>@hydrasendertelBot</code> در تلگرام هدایت شوید.</p>
       <div class="field">
-        <label for="channelName">نام کانال</label>
-        <input type="text" id="channelName" placeholder="مثلاً: املاک آفتاب ">
+        <label for="wizChannel">آیدی کانال تلگرام (اختیاری):</label>
+        <input type="text" id="wizChannel" placeholder="@aliabadmelk" />
       </div>
       <div class="field">
-        <label for="adminUsername">آیدی تلگرام ادمین</label>
-        <input type="text" id="adminUsername" placeholder="@username">
+        <label for="wizCity">شهر هدف:</label>
+        <select id="wizCity">
+          <option value="823">علی‌آباد کتول (823)</option>
+          <option value="24">گرگان (24)</option>
+          <option value="25">ساری (25)</option>
+          <option value="1">تهران (1)</option>
+        </select>
       </div>
       <div class="field">
-        <label for="phone">شماره تماس</label>
-        <input type="tel" id="phone" placeholder="09xxxxxxxxx">
+        <label for="wizPlan">پلن انتخابی:</label>
+        <select id="wizPlan">
+          <option value="FREE_TRIAL">تست رایگان (۳ روزه)</option>
+          <option value="BASIC_MONTH">پایه ماهانه (۲۹۰ هزار تومان)</option>
+          <option value="PRO_MONTH">حرفه‌ای مشاورین املاک (۶۹۰ هزار تومان)</option>
+          <option value="AGENCY_VIP">ویژه آژانس‌های املاک (۱,۸۵۰,۰۰۰ تومان)</option>
+        </select>
       </div>
-      <div class="wizard-actions">
-        <button class="btn btn-ghost wizard-back">بازگشت</button>
-        <button class="btn btn-primary wizard-next">ادامه</button>
-      </div>
+      <button type="button" class="btn btn-primary btn-block" id="wizardSubmit">شروع در تلگرام ←</button>
     </div>
-
-    <!-- Step 3 -->
-    <div class="wizard-step" data-step="3">
-      <h3>پلن مورد نظر</h3>
-      <div class="radio-grid">
-        <label class="radio-card"><input type="radio" name="plan" value="آزمایشی رایگان" checked><span>دوره آزمایشی رایگان</span></label>
-        <label class="radio-card"><input type="radio" name="plan" value="روزانه"><span>روزانه</span></label>
-        <label class="radio-card"><input type="radio" name="plan" value="ماهانه"><span>ماهانه</span></label>
-      </div>
-      <div class="wizard-actions">
-        <button class="btn btn-ghost wizard-back">بازگشت</button>
-        <button class="btn btn-primary" id="wizardSubmit">ارسال درخواست در تلگرام</button>
-      </div>
-      <p class="wizard-hint">با کلیک روی دکمه بالا، چت تلگرام با اطلاعات شما برای ادمین باز می‌شود.</p>
-    </div>
-
   </div>
-</div>
 
-<script src="assets/script.js"></script>
+  <script src="assets/script.js"></script>
 </body>
 </html>

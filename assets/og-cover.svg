@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#061214"/>
+      <stop offset="55%" stop-color="#091f24"/>
+      <stop offset="100%" stop-color="#0c1322"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.2" cy="0.25" r="0.6">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.82" cy="0.72" r="0.55">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+  <g stroke="#1e3a44" stroke-width="1" opacity="0.45">
+    <line x1="0" y1="150" x2="1200" y2="150"/>
+    <line x1="0" y1="315" x2="1200" y2="315"/>
+    <line x1="0" y1="480" x2="1200" y2="480"/>
+    <line x1="300" y1="0" x2="300" y2="630"/>
+    <line x1="600" y1="0" x2="600" y2="630"/>
+    <line x1="900" y1="0" x2="900" y2="630"/>
+  </g>
+  <g transform="translate(880, 195)">
+    <circle cx="110" cy="110" r="96" fill="none" stroke="#10b981" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="8 8"/>
+    <circle cx="110" cy="110" r="64" fill="none" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="2"/>
+    <path d="M55 128 L110 74 L165 128 V168 H130 V132 H90 V168 H55 Z" fill="#10b981" fill-opacity="0.22" stroke="#10b981" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="155" cy="68" r="10" fill="#f59e0b"/>
+  </g>
+  <text x="110" y="235" fill="#10b981" font-family="system-ui, sans-serif" font-size="28" font-weight="700">HYDRA REAL ESTATE BOT · CLOUDFLARE EDGE</text>
+  <text x="110" y="310" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="60" font-weight="800">Hydra Real Estate Bot</text>
+  <text x="110" y="370" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="28">Divar + Sheypoor • Tolerance Scoring • NLP • Geo-Fence • Telegram</text>
+  <rect x="110" y="425" width="320" height="52" rx="12" fill="#10b981" fill-opacity="0.18" stroke="#10b981"/>
+  <text x="140" y="459" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="22" font-weight="600">hydra.startstar.ir · @aliabadmelk</text>
+</svg>
